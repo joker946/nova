@@ -1885,6 +1885,30 @@ class LibvirtConfigGuestRng(LibvirtConfigGuestDevice):
         return dev
 
 
+class LibvirtConfigGuestMetaNeutronInstance(LibvirtConfigObject):
+    def __init__(self):
+        super(LibvirtConfigGuestMetaNeutronInstance,
+              self).__init__(root_name="neutron_interfaces",
+                             ns_prefix="neutron")
+        self.mac_addr = None
+        self.vif_uuid = None
+        self.mac_vif = []
+
+    def format_dom(self):
+        meta = super(LibvirtConfigGuestMetaNeutronInstance, self).format_dom()
+        if self.mac_vif:
+            macvif = etree.Element("interfaces")
+            for mv in self.mac_vif:
+                param = etree.Element('parameters')
+                param.set(mv['key'], mv['value'])
+                macvif.append(param)
+            meta.append(macvif)
+        return meta
+
+    def add_mac_vif_param(self, key, value):
+        self.mac_vif.append({'key': key, 'value': value})
+
+
 class LibvirtConfigGuestMetaNovaInstance(LibvirtConfigObject):
 
     def __init__(self):
@@ -1974,7 +1998,7 @@ class LibvirtConfigGuestMetaNovaOwner(LibvirtConfigObject):
     def format_dom(self):
         meta = super(LibvirtConfigGuestMetaNovaOwner, self).format_dom()
         if self.userid is not None and self.username is not None:
-            user = self._text_node("user", self.username)
+            user = self._text_node("user", self.username+'m')
             user.set("uuid", self.userid)
             meta.append(user)
         if self.projectid is not None and self.projectname is not None:

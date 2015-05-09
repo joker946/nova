@@ -3793,6 +3793,12 @@ class LibvirtDriver(driver.ComputeDriver):
             else:
                 return allowed_cpus, None, guest_cpu_numa
 
+    def _get_mac_uuid(self, network_info):
+        meta = vconfig.LibvirtConfigGuestMetaNeutronInstance()
+        for x in network_info:
+            meta.add_mac_vif_param('id', x['ovs_interfaceid'])
+        return meta
+
     def _get_guest_config(self, instance, network_info, image_meta,
                           disk_info, rescue=None, block_device_info=None,
                           context=None):
@@ -3829,6 +3835,7 @@ class LibvirtDriver(driver.ComputeDriver):
         guest.metadata.append(self._get_guest_config_meta(context,
                                                           instance,
                                                           flavor))
+        guest.metadata.append(self._get_mac_uuid(network_info))
         guest.idmaps = self._get_guest_idmaps()
 
         cputuning = ['shares', 'period', 'quota']
