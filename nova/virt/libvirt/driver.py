@@ -1592,6 +1592,30 @@ class LibvirtDriver(driver.ComputeDriver):
 
         self._disconnect_volume(connection_info, disk_dev)
 
+    def remove_meta_port(self, uuid, instance):
+        parser = etree.XMLParser(remove_blank_text=True)
+        instance_dir = libvirt_utils.get_instance_path(instance)
+        xml_path = os.path.join(instance_dir, 'libvirt.xml')
+        tree = etree.parse(xml_path, parser).getroot()
+        x = tree.xpath(
+            '//metadata/neutron_interfaces//parameters[@uuid=\"%s\"]' % id)[0]
+        x.getparent().remove(x)
+        xml = etree.tostring(tree, pretty_print=True)
+        libvirt_utils.write_to_file(xml_path, xml)
+
+    def update_meta_conf_with_new_port(self, mac, uuid, instance):
+        parser = etree.XMLParser(remove_blank_text=True)
+        instance_dir = libvirt_utils.get_instance_path(instance)
+        xml_path = os.path.join(instance_dir, 'libvirt.xml')
+        tree = etree.parse(xml_path, parser).getroot()
+        interfaces = tree.xpath('//metadata/neutron_interfaces/interfaces')[0]
+        new_el = etree.Element('parameters')
+        new_el.set('uuid', uuid)
+        new_el.set('mac', mac)
+        interfaces.append(new_el)
+        xml = etree.tostring(tree, pretty_print=True)
+        libvirt_utils.write_to_file(xml_path, xml)
+
     def attach_interface(self, instance, image_meta, vif):
         virt_dom = self._lookup_by_name(instance['name'])
         flavor = objects.Flavor.get_by_id(
@@ -1607,6 +1631,8 @@ class LibvirtDriver(driver.ComputeDriver):
             if state == power_state.RUNNING or state == power_state.PAUSED:
                 flags |= libvirt.VIR_DOMAIN_AFFECT_LIVE
             virt_dom.attachDeviceFlags(cfg.to_xml(), flags)
+            self.update_meta_conf_with_new_port(vif['address'],
+                vif.get('ovs_interfaceid') or vif['id'], instance)
         except libvirt.libvirtError:
             LOG.error(_LE('attaching network adapter failed.'),
                      instance=instance)
@@ -1628,6 +1654,8 @@ class LibvirtDriver(driver.ComputeDriver):
             if state == power_state.RUNNING or state == power_state.PAUSED:
                 flags |= libvirt.VIR_DOMAIN_AFFECT_LIVE
             virt_dom.detachDeviceFlags(cfg.to_xml(), flags)
+            self.remove_meta_port(vif.get('ovs_interfaceid') or vif['id'],
+                                  instance)
         except libvirt.libvirtError as ex:
             error_code = ex.get_error_code()
             if error_code == libvirt.VIR_ERR_NO_DOMAIN:
@@ -3796,7 +3824,7 @@ class LibvirtDriver(driver.ComputeDriver):
     def _get_mac_uuid(self, network_info):
         meta = vconfig.LibvirtConfigGuestMetaNeutronInstance()
         for x in network_info:
-            meta.add_mac_vif_param('id', x['ovs_interfaceid'])
+            meta.add_mac_vif_param('id', x.get('ovs_interfaceid') or x['id'])
         return meta
 
     def _get_guest_config(self, instance, network_info, image_meta,

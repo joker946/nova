@@ -1998,7 +1998,7 @@ class LibvirtConfigGuestMetaNovaOwner(LibvirtConfigObject):
     def format_dom(self):
         meta = super(LibvirtConfigGuestMetaNovaOwner, self).format_dom()
         if self.userid is not None and self.username is not None:
-            user = self._text_node("user", self.username+'m')
+            user = self._text_node("user", self.username)
             user.set("uuid", self.userid)
             meta.append(user)
         if self.projectid is not None and self.projectname is not None:
