@@ -1888,25 +1888,23 @@ class LibvirtConfigGuestRng(LibvirtConfigGuestDevice):
 class LibvirtConfigGuestMetaNeutronInstance(LibvirtConfigObject):
     def __init__(self):
         super(LibvirtConfigGuestMetaNeutronInstance,
-              self).__init__(root_name="neutron_interfaces",
-                             ns_prefix="neutron")
-        self.mac_addr = None
-        self.vif_uuid = None
+              self).__init__(root_name="interfaces",
+                             ns_prefix="neutron",
+                             ns_uri='NEUTRON_URI')
         self.mac_vif = []
 
     def format_dom(self):
         meta = super(LibvirtConfigGuestMetaNeutronInstance, self).format_dom()
         if self.mac_vif:
-            macvif = etree.Element("interfaces")
             for mv in self.mac_vif:
                 param = etree.Element('parameters')
-                param.set(mv['key'], mv['value'])
-                macvif.append(param)
-            meta.append(macvif)
+                param.set('mac', mv['mac'])
+                param.set('uuid', mv['uuid'])
+                meta.append(param)
         return meta
 
-    def add_mac_vif_param(self, key, value):
-        self.mac_vif.append({'key': key, 'value': value})
+    def add_mac_vif_param(self, mac, vif_uuid):
+        self.mac_vif.append({'mac': mac, 'uuid': vif_uuid})
 
 
 class LibvirtConfigGuestMetaNovaInstance(LibvirtConfigObject):
