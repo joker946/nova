@@ -1598,8 +1598,8 @@ class LibvirtDriver(driver.ComputeDriver):
         tree = etree.fromstring(virt_dom.metadata(
             libvirt.VIR_DOMAIN_METADATA_ELEMENT,
             'NEUTRON_URI',
-            libvirt.VIR_DOMAIN_AFFECT_CONFIG),
-            parser)
+            flags=libvirt.VIR_DOMAIN_AFFECT_CURRENT +
+            libvirt.VIR_DOMAIN_AFFECT_LIVE), parser)
         if remove:
             x = tree.xpath(
                 '/interfaces/parameters[@uuid=\"%s\"]' % uuid)[0]
@@ -1609,9 +1609,11 @@ class LibvirtDriver(driver.ComputeDriver):
             new_el.set('mac', mac)
             new_el.set('uuid', uuid)
             tree.append(new_el)
-        xml = etree.tostring(tree, pretty_print=True)
+        xml = etree.tostring(tree, pretty_print=False)
         virt_dom.setMetadata(libvirt.VIR_DOMAIN_METADATA_ELEMENT, xml,
                              'neutron', 'NEUTRON_URI',
+                             flags=libvirt.VIR_DOMAIN_AFFECT_CURRENT +
+                             libvirt.VIR_DOMAIN_AFFECT_LIVE +
                              libvirt.VIR_DOMAIN_AFFECT_CONFIG)
 
     def attach_interface(self, instance, image_meta, vif):
