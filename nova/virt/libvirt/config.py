@@ -40,6 +40,7 @@ LOG = logging.getLogger(__name__)
 
 # Namespace to use for Nova specific metadata items in XML
 NOVA_NS = "http://openstack.org/xmlns/libvirt/nova/1.0"
+NEUTRON_NS = "http://openstack.org/xmlns/libvirt/neutron/1.0"
 
 
 class LibvirtConfigObject(object):
@@ -1890,14 +1891,14 @@ class LibvirtConfigGuestMetaNeutronInstance(LibvirtConfigObject):
         super(LibvirtConfigGuestMetaNeutronInstance,
               self).__init__(root_name="interfaces",
                              ns_prefix="neutron",
-                             ns_uri='NEUTRON_URI')
+                             ns_uri=NEUTRON_NS)
         self.mac_vif = []
 
     def format_dom(self):
         meta = super(LibvirtConfigGuestMetaNeutronInstance, self).format_dom()
         if self.mac_vif:
             for mv in self.mac_vif:
-                param = etree.Element('parameters')
+                param = self._new_node('interface')
                 param.set('mac', mv['mac'])
                 param.set('uuid', mv['uuid'])
                 meta.append(param)

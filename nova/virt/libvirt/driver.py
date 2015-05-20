@@ -118,6 +118,8 @@ libvirt = None
 
 LOG = logging.getLogger(__name__)
 
+NEUTRON_NS = "http://openstack.org/xmlns/libvirt/neutron/1.0"
+
 libvirt_opts = [
     cfg.StrOpt('rescue_image_id',
                help='Rescue ami image. This will not be used if an image id '
@@ -1597,21 +1599,21 @@ class LibvirtDriver(driver.ComputeDriver):
         parser = etree.XMLParser(remove_blank_text=True)
         tree = etree.fromstring(virt_dom.metadata(
             libvirt.VIR_DOMAIN_METADATA_ELEMENT,
-            'NEUTRON_URI',
+            NEUTRON_NS,
             flags=libvirt.VIR_DOMAIN_AFFECT_CURRENT +
             libvirt.VIR_DOMAIN_AFFECT_LIVE), parser)
         if remove:
             x = tree.xpath(
-                '/interfaces/parameters[@uuid=\"%s\"]' % uuid)[0]
+                '/interfaces/interface[@uuid=\"%s\"]' % uuid)[0]
             x.getparent().remove(x)
         else:
-            new_el = etree.Element('parameters')
+            new_el = etree.Element('interface')
             new_el.set('mac', mac)
             new_el.set('uuid', uuid)
             tree.append(new_el)
         xml = etree.tostring(tree, pretty_print=False)
         virt_dom.setMetadata(libvirt.VIR_DOMAIN_METADATA_ELEMENT, xml,
-                             'neutron', 'NEUTRON_URI',
+                             'neutron', NEUTRON_NS,
                              flags=libvirt.VIR_DOMAIN_AFFECT_CURRENT +
                              libvirt.VIR_DOMAIN_AFFECT_LIVE +
                              libvirt.VIR_DOMAIN_AFFECT_CONFIG)
@@ -3826,7 +3828,7 @@ class LibvirtDriver(driver.ComputeDriver):
             else:
                 return allowed_cpus, None, guest_cpu_numa
 
-    def _get_mac_uuid(self, network_info):
+    def _add_port_meta(self, network_info):
         meta = vconfig.LibvirtConfigGuestMetaNeutronInstance()
         for x in network_info:
             meta.add_mac_vif_param(x['address'], x.get('ovs_interfaceid') or
@@ -3869,7 +3871,7 @@ class LibvirtDriver(driver.ComputeDriver):
         guest.metadata.append(self._get_guest_config_meta(context,
                                                           instance,
                                                           flavor))
-        guest.metadata.append(self._get_mac_uuid(network_info))
+        guest.metadata.append(self._add_port_meta(network_info))
         guest.idmaps = self._get_guest_idmaps()
 
         cputuning = ['shares', 'period', 'quota']
