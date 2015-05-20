@@ -118,6 +118,8 @@ libvirt = None
 
 LOG = logging.getLogger(__name__)
 
+NEUTRON_NS = "http://openstack.org/xmlns/libvirt/neutron/1.0"
+
 libvirt_opts = [
     cfg.StrOpt('rescue_image_id',
                help='Rescue ami image. This will not be used if an image id '
@@ -1592,6 +1594,30 @@ class LibvirtDriver(driver.ComputeDriver):
 
         self._disconnect_volume(connection_info, disk_dev)
 
+    def update_meta_conf_with_new_port(self, mac, uuid, virt_dom,
+                                       remove=False):
+        parser = etree.XMLParser(remove_blank_text=True)
+        tree = etree.fromstring(virt_dom.metadata(
+            libvirt.VIR_DOMAIN_METADATA_ELEMENT,
+            NEUTRON_NS,
+            flags=libvirt.VIR_DOMAIN_AFFECT_CURRENT +
+            libvirt.VIR_DOMAIN_AFFECT_LIVE), parser)
+        if remove:
+            x = tree.xpath(
+                '/interfaces/interface[@uuid=\"%s\"]' % uuid)[0]
+            x.getparent().remove(x)
+        else:
+            new_el = etree.Element('interface')
+            new_el.set('mac', mac)
+            new_el.set('uuid', uuid)
+            tree.append(new_el)
+        xml = etree.tostring(tree, pretty_print=False)
+        virt_dom.setMetadata(libvirt.VIR_DOMAIN_METADATA_ELEMENT, xml,
+                             'neutron', NEUTRON_NS,
+                             flags=libvirt.VIR_DOMAIN_AFFECT_CURRENT +
+                             libvirt.VIR_DOMAIN_AFFECT_LIVE +
+                             libvirt.VIR_DOMAIN_AFFECT_CONFIG)
+
     def attach_interface(self, instance, image_meta, vif):
         virt_dom = self._lookup_by_name(instance['name'])
         flavor = objects.Flavor.get_by_id(
@@ -1607,6 +1633,10 @@ class LibvirtDriver(driver.ComputeDriver):
             if state == power_state.RUNNING or state == power_state.PAUSED:
                 flags |= libvirt.VIR_DOMAIN_AFFECT_LIVE
             virt_dom.attachDeviceFlags(cfg.to_xml(), flags)
+            self.update_meta_conf_with_new_port(vif['address'],
+                                                vif.get('ovs_interfaceid') or
+                                                vif['id'],
+                                                virt_dom)
         except libvirt.libvirtError:
             LOG.error(_LE('attaching network adapter failed.'),
                      instance=instance)
@@ -1628,6 +1658,11 @@ class LibvirtDriver(driver.ComputeDriver):
             if state == power_state.RUNNING or state == power_state.PAUSED:
                 flags |= libvirt.VIR_DOMAIN_AFFECT_LIVE
             virt_dom.detachDeviceFlags(cfg.to_xml(), flags)
+            self.update_meta_conf_with_new_port(vif['address'],
+                                                vif.get('ovs_interfaceid') or
+                                                vif['id'],
+                                                virt_dom,
+                                                remove=True)
         except libvirt.libvirtError as ex:
             error_code = ex.get_error_code()
             if error_code == libvirt.VIR_ERR_NO_DOMAIN:
@@ -3793,6 +3828,13 @@ class LibvirtDriver(driver.ComputeDriver):
             else:
                 return allowed_cpus, None, guest_cpu_numa
 
+    def _add_port_meta(self, network_info):
+        meta = vconfig.LibvirtConfigGuestMetaNeutronInstance()
+        for x in network_info:
+            meta.add_mac_vif_param(x['address'], x.get('ovs_interfaceid') or
+                                                 x['id'])
+        return meta
+
     def _get_guest_config(self, instance, network_info, image_meta,
                           disk_info, rescue=None, block_device_info=None,
                           context=None):
@@ -3829,6 +3871,7 @@ class LibvirtDriver(driver.ComputeDriver):
         guest.metadata.append(self._get_guest_config_meta(context,
                                                           instance,
                                                           flavor))
+        guest.metadata.append(self._add_port_meta(network_info))
         guest.idmaps = self._get_guest_idmaps()
 
         cputuning = ['shares', 'period', 'quota']
