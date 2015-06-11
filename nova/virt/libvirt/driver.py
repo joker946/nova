@@ -1369,6 +1369,7 @@ class LibvirtDriver(driver.ComputeDriver):
         if driver_type not in self.volume_drivers:
             raise exception.VolumeDriverNotFound(driver_type=driver_type)
         driver = self.volume_drivers[driver_type]
+        LOG.debug(_(driver))
         return driver.connect_volume(connection_info, disk_info)
 
     def _disconnect_volume(self, connection_info, disk_dev):

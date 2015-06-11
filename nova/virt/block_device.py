@@ -246,6 +246,11 @@ class DriverVolumeBlockDevice(DriverBlockDevice):
                 context, volume_api, volume_id, connection_info)
 
             try:
+                LOG.debug(_("Attach volume block device"))
+                LOG.debug(_(connection_info))
+                LOG.debug(_(instance))
+                LOG.debug(_(volume_api))
+                LOG.debug(_(virt_driver))
                 virt_driver.attach_volume(
                         context, connection_info, instance,
                         self['mount_device'], disk_bus=self['disk_bus'],

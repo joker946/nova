@@ -352,6 +352,7 @@ def dict_to_query_str(params):
 
 def get_networks_for_instance_from_nw_info(nw_info):
     networks = {}
+    LOG.debug(_(nw_info))
     for vif in nw_info:
         ips = vif.fixed_ips()
         floaters = vif.floating_ips()
