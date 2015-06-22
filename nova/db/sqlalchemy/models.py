@@ -146,6 +146,17 @@ class ComputeNode(BASE, NovaBase):
     numa_topology = Column(Text)
 
 
+class ComputeNodeStats(BASE, NovaBase):
+    __tablename__ = 'compute_node_stats'
+    __table_args__ = ()
+    id = Column(Integer, primary_key=True)
+    compute_id = Column(Integer, ForeignKey('compute_nodes.id'),
+                        nullable=False)
+    memory_free = Column(Integer, nullable=False)
+    memory_total = Column(Integer, nullable=False)
+    cpu_used_percent = Column(Integer, nullable=True)
+
+
 class Certificate(BASE, NovaBase):
     """Represents a x509 certificate."""
     __tablename__ = 'certificates'

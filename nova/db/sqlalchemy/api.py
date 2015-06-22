@@ -647,6 +647,23 @@ def compute_node_update(context, compute_id, values):
 
 
 @require_admin_context
+@_retry_on_deadlock
+def compute_node_stats_upsert(context, values):
+    session = get_session()
+    with session.begin():
+        compute_stats = model_query(context, models.ComputeNodeStats,
+                                    session=session).filter_by(
+            compute_id=values['compute_id']).first()
+        if compute_stats:
+            compute_stats.update(values)
+        else:
+            compute_stats = models.ComputeNodeStats()
+            compute_stats.update(values)
+            compute_stats.save()
+    return compute_stats
+
+
+@require_admin_context
 def compute_node_delete(context, compute_id):
     """Delete a ComputeNode record."""
     session = get_session()

@@ -6502,6 +6502,7 @@ class HostState(object):
         data["local_gb"] = disk_info_dict['total']
         data["vcpus_used"] = self.driver._get_vcpu_used()
         data["memory_mb_used"] = self.driver._get_memory_mb_used()
+        data["real_memory_mb_used"] = data["memory_mb_used"]
         data["local_gb_used"] = disk_info_dict['used']
         data["hypervisor_type"] = self.driver._get_hypervisor_type()
         data["hypervisor_version"] = self.driver._get_hypervisor_version()
