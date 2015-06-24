@@ -6393,9 +6393,6 @@ class LibvirtDriver(driver.ComputeDriver):
     def inject_network_info(self, instance, nw_info):
         self.firewall_driver.setup_basic_filtering(instance, nw_info)
 
-    def get_instance_by_uuid(self, context, instance_id):
-        return objects.Instance.get_by_uuid(context, instance_id)
-
     def _delete_instance_files(self, instance):
         # NOTE(mikal): a shim to handle this file not using instance objects
         # everywhere. Remove this when that conversion happens.
