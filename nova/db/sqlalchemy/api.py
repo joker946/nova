@@ -650,16 +650,28 @@ def compute_node_update(context, compute_id, values):
 @_retry_on_deadlock
 def compute_node_stats_upsert(context, values):
     session = get_session()
+    compute_node = values['node']
+    instances = values['instances']
     with session.begin():
         compute_stats = model_query(context, models.ComputeNodeStats,
                                     session=session).filter_by(
-            compute_id=values['compute_id']).first()
+            compute_id=compute_node['compute_id']).first()
         if compute_stats:
-            compute_stats.update(values)
+            compute_stats.update(compute_node)
         else:
             compute_stats = models.ComputeNodeStats()
-            compute_stats.update(values)
+            compute_stats.update(compute_node)
             compute_stats.save()
+        for x in instances:
+            instance = model_query(context, models.InstanceStats,
+                                   session=session).filter_by(
+                instance_uuid=x['instance_uuid']).first()
+            if instance:
+                instance.update(x)
+            else:
+                instance_stats = models.InstanceStats()
+                instance_stats.update(x)
+                instance_stats.save()
     return compute_stats
 
 

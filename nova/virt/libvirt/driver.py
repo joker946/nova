@@ -4295,6 +4295,27 @@ class LibvirtDriver(driver.ComputeDriver):
                     'ex': ex})
             raise exception.NovaException(msg)
 
+    def _lookup_by_uuid(self, instance_uuid):
+        """Retrieve libvirt domain object given an instance uuid.
+
+        All libvirt error handling should be handled in this method and
+        relevant nova exceptions should be raised in response.
+
+        """
+        try:
+            return self._conn.lookupByUUIDString(instance_uuid)
+        except libvirt.libvirtError as ex:
+            error_code = ex.get_error_code()
+            if error_code == libvirt.VIR_ERR_NO_DOMAIN:
+                raise exception.InstanceNotFound(instance_id=instance_uuid)
+
+            msg = (_("Error from libvirt while looking up %(instance_uuid)s: "
+                     "[Error Code %(error_code)s] %(ex)s")
+                   % {'instance_id': instance_uuid,
+                      'error_code': error_code,
+                      'ex': ex})
+            raise exception.NovaException(msg)
+
     def get_info(self, instance):
         """Retrieve information from libvirt for a specific instance name.
 
@@ -4324,6 +4345,30 @@ class LibvirtDriver(driver.ComputeDriver):
                 'num_cpu': dom_info[3],
                 'cpu_time': dom_info[4],
                 'id': virt_dom.ID()}
+
+    def get_info_by_uuid(self, instance_uuid):
+        virt_dom = self._lookup_by_uuid(instance_uuid)
+        try:
+            dom_info = virt_dom.info()
+        except libvirt.libvirtError as ex:
+            error_code = ex.get_error_code()
+            if error_code == libvirt.VIR_ERR_NO_DOMAIN:
+                raise exception.InstanceNotFound(instance_id=instance_uuid)
+
+            msg = (_('Error from libvirt while getting domain info for '
+                     '%(instance_name)s: [Error Code %(error_code)s] %(ex)s') %
+                   {'instance_name': instance_uuid,
+                    'error_code': error_code,
+                    'ex': ex})
+            raise exception.NovaException(msg)
+
+        return {'state': LIBVIRT_POWER_STATE[dom_info[0]],
+                'max_mem': dom_info[1],
+                'mem': dom_info[2],
+                'num_cpu': dom_info[3],
+                'cpu_time': dom_info[4],
+                'libvirt_id': virt_dom.ID(),
+                'instance_uuid': instance_uuid}
 
     def _create_domain_setup_lxc(self, instance, block_device_info, disk_info):
         inst_path = libvirt_utils.get_instance_path(instance)
@@ -6347,6 +6392,9 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def inject_network_info(self, instance, nw_info):
         self.firewall_driver.setup_basic_filtering(instance, nw_info)
+
+    def get_instance_by_uuid(self, context, instance_id):
+        return objects.Instance.get_by_uuid(context, instance_id)
 
     def _delete_instance_files(self, instance):
         # NOTE(mikal): a shim to handle this file not using instance objects

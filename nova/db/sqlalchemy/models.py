@@ -157,6 +157,19 @@ class ComputeNodeStats(BASE, NovaBase):
     cpu_used_percent = Column(Integer, nullable=True)
 
 
+class InstanceStats(BASE, NovaBase):
+    __tablename__ = 'instance_stats'
+    __table_args__ = ()
+    id = Column(Integer, primary_key=True)
+    instance_uuid = Column(Text, ForeignKey('instances.uuid'))
+    libvirt_id = Column(Integer)
+    cpu_time = Column(BigInteger)
+    num_cpu = Column(Integer)
+    mem = Column(Integer)
+    max_mem = Column(Integer)
+    state = Column(Integer)
+
+
 class Certificate(BASE, NovaBase):
     """Represents a x509 certificate."""
     __tablename__ = 'certificates'

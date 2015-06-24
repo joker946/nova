@@ -431,10 +431,17 @@ class ResourceTracker(object):
 
         self._update_usage_from_instances(context, resources, instances)
         compute_stats = self._make_compute_stats(resources)
+        LOG.info(_(compute_stats))
+        ins_stats = []
+        for x in instances:
+            ins_stats.append(self.driver.get_info_by_uuid(x['uuid']))
+        drs_stats = {}
+        drs_stats['node'] = compute_stats
+        drs_stats['instances'] = ins_stats
         if compute_stats:
             self.conductor_api.compute_node_stats_upsert(context,
-                                                         compute_stats)
-        LOG.info(_(compute_stats))
+                                                         drs_stats)
+        LOG.info(_(ins_stats))
         # Grab all in-progress migrations:
         capi = self.conductor_api
         migrations = capi.migration_get_in_progress_by_host_and_node(context,
