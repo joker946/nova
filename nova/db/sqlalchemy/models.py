@@ -157,19 +157,6 @@ class ComputeNodeStats(BASE, NovaBase):
     cpu_used_percent = Column(Integer, nullable=True)
 
 
-class InstanceStats(BASE, NovaBase):
-    __tablename__ = 'instance_stats'
-    __table_args__ = ()
-    id = Column(Integer, primary_key=True)
-    instance_uuid = Column(Text, ForeignKey('instances.uuid'))
-    libvirt_id = Column(Integer)
-    cpu_time = Column(BigInteger)
-    num_cpu = Column(Integer)
-    mem = Column(Integer)
-    max_mem = Column(Integer)
-    state = Column(Integer)
-
-
 class Certificate(BASE, NovaBase):
     """Represents a x509 certificate."""
     __tablename__ = 'certificates'
@@ -325,6 +312,24 @@ class Instance(BASE, NovaBase):
 
     # Records whether an instance has been deleted from disk
     cleaned = Column(Integer, default=0)
+
+
+class InstanceStats(BASE, NovaBase):
+    __tablename__ = 'instance_stats'
+    __table_args__ = ()
+    id = Column(Integer, primary_key=True)
+    instance_uuid = Column(Text, ForeignKey('instances.uuid'))
+    libvirt_id = Column(Integer)
+    cpu_time = Column(BigInteger)
+    num_cpu = Column(Integer, ForeignKey('instances.vcpus'))
+    mem = Column(Integer)
+    max_mem = Column(Integer, ForeignKey('instances.memory_mb'))
+    state = Column(Integer, ForeignKey('instances.power_state'))
+    instance = orm.relationship(Instance,
+                                backref=orm.backref('instance_stats',
+                                                    uselist=False),
+                                foreign_keys=instance_uuid,
+                                primaryjoin=instance_uuid == Instance.uuid)
 
 
 class InstanceInfoCache(BASE, NovaBase):

@@ -4362,10 +4362,7 @@ class LibvirtDriver(driver.ComputeDriver):
                     'ex': ex})
             raise exception.NovaException(msg)
 
-        return {'state': LIBVIRT_POWER_STATE[dom_info[0]],
-                'max_mem': dom_info[1],
-                'mem': dom_info[2],
-                'num_cpu': dom_info[3],
+        return {'mem': dom_info[2]//1024,
                 'cpu_time': dom_info[4],
                 'libvirt_id': virt_dom.ID(),
                 'instance_uuid': instance_uuid}
