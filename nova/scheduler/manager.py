@@ -174,3 +174,7 @@ class SchedulerManager(manager.Manager):
         dests = self.driver.select_destinations(context, request_spec,
             filter_properties)
         return jsonutils.to_primitive(dests)
+
+    @periodic_task.periodic_task
+    def drs_threshold(self, context):
+        self.driver.indicate_drs_threshold(context)

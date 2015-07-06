@@ -238,6 +238,15 @@ def compute_node_update(context, compute_id, values):
 def compute_node_stats_upsert(context, values):
     return IMPL.compute_node_stats_upsert(context, values)
 
+
+def get_compute_node_stats(context):
+    return IMPL.get_compute_node_stats(context)
+
+
+def get_instances_stat(context, host):
+    return IMPL.get_instances_stat(context, host)
+
+
 def compute_node_delete(context, compute_id):
     """Delete a compute node from the database.
 

@@ -49,8 +49,17 @@ filter_scheduler_opts = [
                     'This value must be at least 1. Any value less than 1 '
                     'will be ignored, and 1 will be used instead')
 ]
+drs_opts = [
+    cfg.IntOpt('cpu_threshold',
+               default=70,
+               help='DRS CPU threshold, percent'),
+    cfg.IntOpt('memory_threshold',
+               default=70,
+               help='DRS memory threshold, percent')
+]
 
 CONF.register_opts(filter_scheduler_opts)
+CONF.register_opts(drs_opts, 'drs')
 
 
 class FilterScheduler(driver.Scheduler):
@@ -315,3 +324,29 @@ class FilterScheduler(driver.Scheduler):
     def _get_all_host_states(self, context):
         """Template method, so a subclass can implement caching."""
         return self.host_manager.get_all_host_states(context)
+
+    def _choose_instance_to_migrate(self, instances):
+        pass
+
+    def _drs_threshold_function(self, context):
+        compute_nodes = self.host_manager.get_nodes_state(context)
+        cpu_td = CONF.drs.cpu_threshold
+        memory_td = CONF.drs.memory_threshold
+        LOG.debug(_(cpu_td))
+        LOG.debug(_(memory_td))
+        for node in compute_nodes:
+            cpu_used_percent = node['cpu_used_percent']
+            memory_used = node['memory_total'] - node['memory_free']
+            memory_used_percent = round(
+                (float(memory_used)/float(node['memory_total'])) * 100.00, 0
+                )
+            LOG.debug(_(cpu_used_percent))
+            LOG.debug(_(memory_used_percent))
+            if cpu_used_percent > cpu_td or memory_used_percent > memory_td:
+                instances = self.host_manager.get_instances_for_host(
+                    context,
+                    node.compute_node.hypervisor_hostname)
+                self._choose_instance_to_migrate(instances)
+
+    def indicate_drs_threshold(self, context):
+        return self._drs_threshold_function(context)

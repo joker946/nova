@@ -418,3 +418,9 @@ class HostManager(object):
             del self.host_state_map[state_key]
 
         return self.host_state_map.itervalues()
+
+    def get_nodes_state(self, context):
+        return db.get_compute_node_stats(context)
+
+    def get_instances_for_host(self, context, host):
+        return db.get_instances_stat(context, host)

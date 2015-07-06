@@ -133,3 +133,7 @@ class Scheduler(object):
         """
         msg = _("Driver must implement select_destinations")
         raise NotImplementedError(msg)
+
+    def indicate_drs_threshold(self, context):
+        msg = _("Driver must implement indicate_drs_threshold")
+        raise NotImplementedError(msg)

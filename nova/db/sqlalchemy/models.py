@@ -155,6 +155,10 @@ class ComputeNodeStats(BASE, NovaBase):
     memory_free = Column(Integer, nullable=False)
     memory_total = Column(Integer, nullable=False)
     cpu_used_percent = Column(Integer, nullable=True)
+    compute_node = orm.relationship(ComputeNode,
+                                    backref=orm.backref('compute_stats'),
+                                    foreign_keys=compute_id,
+                                    primaryjoin=compute_id == ComputeNode.id)
 
 
 class Certificate(BASE, NovaBase):
@@ -321,6 +325,8 @@ class InstanceStats(BASE, NovaBase):
     instance_uuid = Column(Text, ForeignKey('instances.uuid'))
     libvirt_id = Column(Integer)
     cpu_time = Column(BigInteger)
+    prev_cpu_time = Column(BigInteger)
+    prev_updated_at = Column(DateTime)
     num_cpu = Column(Integer, ForeignKey('instances.vcpus'))
     mem = Column(Integer)
     max_mem = Column(Integer, ForeignKey('instances.memory_mb'))

@@ -664,9 +664,15 @@ def compute_node_stats_upsert(context, values):
             compute_stats.save(session=session)
         for x in instances:
             instance = model_query(context, models.InstanceStats,
-                                   session=session).join(models.Instance, models.InstanceStats.instance_uuid == models.Instance.uuid).filter(
-                models.InstanceStats.instance_uuid==x['instance_uuid']).first()
+                                   session=session).\
+                join(models.Instance,
+                     models.InstanceStats.instance_uuid ==
+                     models.Instance.uuid).filter(
+                    models.InstanceStats.instance_uuid == x['instance_uuid'])\
+                .first()
             if instance:
+                instance['prev_cpu_time'] = instance['cpu_time']
+                instance['prev_updated_at'] = instance['updated_at']
                 instance.update(x)
                 instance['max_mem'] = instance.instance['memory_mb']
                 instance['state'] = instance.instance['power_state']
@@ -681,6 +687,21 @@ def compute_node_stats_upsert(context, values):
                 instance_stats['num_cpu'] = ins['vcpus']
                 instance_stats.save(session=session)
     return compute_stats
+
+
+@require_admin_context
+def get_compute_node_stats(context):
+    return model_query(context, models.ComputeNodeStats).\
+        join(models.ComputeNode).options(joinedload('compute_node')).all()
+
+
+@require_admin_context
+def get_instances_stat(context, host):
+    return model_query(context, models.InstanceStats).\
+        join(models.Instance,
+             models.InstanceStats.instance_uuid == models.Instance.uuid)\
+        .filter(models.Instance.host == host).options(joinedload('instance'))\
+        .all()
 
 
 @require_admin_context
