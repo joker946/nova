@@ -325,7 +325,7 @@ class FilterScheduler(driver.Scheduler):
         """Template method, so a subclass can implement caching."""
         return self.host_manager.get_all_host_states(context)
 
-    def _choose_instance_to_migrate(self, instances):
+    def _choose_instance_to_migrate(self, instances, compute_nodes):
         pass
 
     def _drs_threshold_function(self, context):
@@ -346,7 +346,7 @@ class FilterScheduler(driver.Scheduler):
                 instances = self.host_manager.get_instances_for_host(
                     context,
                     node.compute_node.hypervisor_hostname)
-                self._choose_instance_to_migrate(instances)
+                self._choose_instance_to_migrate(instances, compute_nodes)
 
     def indicate_drs_threshold(self, context):
         return self._drs_threshold_function(context)

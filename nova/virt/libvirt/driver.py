@@ -4348,8 +4348,27 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def get_info_by_uuid(self, instance_uuid):
         virt_dom = self._lookup_by_uuid(instance_uuid)
+        block_devices = []
         try:
             dom_info = virt_dom.info()
+            # If domain is running then we can collect block device info.
+            if dom_info[0] == 1:
+                xml = virt_dom.XMLDesc(0)
+                tree = etree.fromstring(xml)
+                block_devices_dev = []
+                for target in tree.findall('devices/disk/target'):
+                    dev = target.get('dev')
+                    if dev not in block_devices:
+                        block_devices_dev.append(dev)
+                for dev in block_devices_dev:
+                    stats = virt_dom.blockStats(dev)
+                    if stats:
+                        block_devices.append({'dev': dev,
+                                              'rreq': stats[0],
+                                              'rbytes': stats[1],
+                                              'wreq': stats[2],
+                                              'wbytes': stats[3]})
+
         except libvirt.libvirtError as ex:
             error_code = ex.get_error_code()
             if error_code == libvirt.VIR_ERR_NO_DOMAIN:
@@ -4365,7 +4384,8 @@ class LibvirtDriver(driver.ComputeDriver):
         return {'mem': dom_info[2]//1024,
                 'cpu_time': dom_info[4],
                 'libvirt_id': virt_dom.ID(),
-                'instance_uuid': instance_uuid}
+                'instance_uuid': instance_uuid,
+                'block_dev_iops': block_devices}
 
     def _create_domain_setup_lxc(self, instance, block_device_info, disk_info):
         inst_path = libvirt_utils.get_instance_path(instance)

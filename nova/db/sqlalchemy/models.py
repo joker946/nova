@@ -23,6 +23,7 @@ from oslo.config import cfg
 from oslo.db.sqlalchemy import models
 from sqlalchemy import Column, Index, Integer, BigInteger, Enum, String, schema
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import orm
 from sqlalchemy import ForeignKey, DateTime, Boolean, Text, Float
@@ -331,6 +332,7 @@ class InstanceStats(BASE, NovaBase):
     mem = Column(Integer)
     max_mem = Column(Integer, ForeignKey('instances.memory_mb'))
     state = Column(Integer, ForeignKey('instances.power_state'))
+    block_dev_iops = Column(JSONB)
     instance = orm.relationship(Instance,
                                 backref=orm.backref('instance_stats',
                                                     uselist=False),
