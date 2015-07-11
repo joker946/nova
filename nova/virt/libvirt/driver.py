@@ -4348,7 +4348,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def get_info_by_uuid(self, instance_uuid):
         virt_dom = self._lookup_by_uuid(instance_uuid)
-        block_devices = []
+        block_devices = 0
         try:
             dom_info = virt_dom.info()
             # If domain is running then we can collect block device info.
@@ -4358,16 +4358,13 @@ class LibvirtDriver(driver.ComputeDriver):
                 block_devices_dev = []
                 for target in tree.findall('devices/disk/target'):
                     dev = target.get('dev')
-                    if dev not in block_devices:
+                    if dev not in block_devices_dev:
                         block_devices_dev.append(dev)
                 for dev in block_devices_dev:
                     stats = virt_dom.blockStats(dev)
                     if stats:
-                        block_devices.append({'dev': dev,
-                                              'rreq': stats[0],
-                                              'rbytes': stats[1],
-                                              'wreq': stats[2],
-                                              'wbytes': stats[3]})
+                        # Summarize wreq and rreq.
+                        block_devices += stats[0] + stats[2]
 
         except libvirt.libvirtError as ex:
             error_code = ex.get_error_code()

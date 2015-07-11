@@ -673,18 +673,11 @@ def compute_node_stats_upsert(context, values):
             if instance:
                 instance['prev_cpu_time'] = instance['cpu_time']
                 instance['prev_updated_at'] = instance['updated_at']
+                instance['prev_block_dev_iops'] = instance['block_dev_iops']
                 instance.update(x)
-                instance['max_mem'] = instance.instance['memory_mb']
-                instance['state'] = instance.instance['power_state']
-                instance['num_cpu'] = instance.instance['vcpus']
             else:
-                ins = model_query(context, models.Instance, session=session).\
-                    filter_by(uuid=x['instance_uuid']).first()
                 instance_stats = models.InstanceStats()
                 instance_stats.update(x)
-                instance_stats['max_mem'] = ins['memory_mb']
-                instance_stats['state'] = ins['power_state']
-                instance_stats['num_cpu'] = ins['vcpus']
                 instance_stats.save(session=session)
     return compute_stats
 
