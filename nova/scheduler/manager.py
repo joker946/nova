@@ -35,6 +35,7 @@ from nova.openstack.common import log as logging
 from nova.openstack.common import periodic_task
 from nova import quota
 from nova.scheduler import utils as scheduler_utils
+from nova.scheduler import load_balancer
 
 
 LOG = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class SchedulerManager(manager.Manager):
             scheduler_driver = CONF.scheduler_driver
         self.driver = importutils.import_object(scheduler_driver)
         self.compute_rpcapi = compute_rpcapi.ComputeAPI()
+        self.loadbalancer = load_balancer.LoadBalancer()
         super(SchedulerManager, self).__init__(service_name='scheduler',
                                                *args, **kwargs)
 
@@ -177,4 +179,4 @@ class SchedulerManager(manager.Manager):
 
     @periodic_task.periodic_task
     def drs_threshold(self, context):
-        self.driver.indicate_drs_threshold(context)
+        self.loadbalancer.indicate_threshold(context)
