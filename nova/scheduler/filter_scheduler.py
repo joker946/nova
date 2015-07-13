@@ -49,17 +49,26 @@ filter_scheduler_opts = [
                     'This value must be at least 1. Any value less than 1 '
                     'will be ignored, and 1 will be used instead')
 ]
-drs_opts = [
+lb_opts = [
     cfg.IntOpt('cpu_threshold',
                default=70,
-               help='DRS CPU threshold, percent'),
+               help='LoadBalancer CPU threshold, percent'),
     cfg.IntOpt('memory_threshold',
                default=70,
-               help='DRS memory threshold, percent')
+               help='LoadBalancer Memory threshold, percent'),
+    cfg.FloatOpt('cpu_weight',
+                 default=1.0,
+                 help='CPU weight'),
+    cfg.FloatOpt('memory_weight',
+                 default=1.0,
+                 help='Memory weight'),
+    cfg.FloatOpt('io_weight',
+                 default=1.0,
+                 help='IO weight')
 ]
 
 CONF.register_opts(filter_scheduler_opts)
-CONF.register_opts(drs_opts, 'drs')
+CONF.register_opts(lb_opts, 'drs')
 
 
 class FilterScheduler(driver.Scheduler):
@@ -325,23 +334,52 @@ class FilterScheduler(driver.Scheduler):
         """Template method, so a subclass can implement caching."""
         return self.host_manager.get_all_host_states(context)
 
+    def _normalize_params(self, instances):
+        max_values = {}
+        min_values = {}
+        normalized_instances = []
+        for instance in instances:
+            for key in instance:
+                if max_values.get(key):
+                    if max_values[key] < instance[key]:
+                        max_values[key] = instance[key]
+                else:
+                    max_values[key] = instance[key]
+                if min_values.get(key):
+                    if min_values[key] > instance[key]:
+                        min_values[key] = instance[key]
+                else:
+                    min_values[key] = instance[key]
+        for instance in instances:
+            norm_ins = {}
+            for key in instance:
+                delta_key = max_values[key] - \
+                    min_values[key] if len(instances) > 1 else 1
+                norm_ins[key] = float(
+                    (instance[key] - min_values[key])) / float((delta_key))
+            normalized_instances.append(norm_ins)
+        return normalized_instances
+
     def _calculate_cpu(self, instance):
         delta_cpu_time = instance['cpu_time'] - instance['prev_cpu_time']
         delta_time = (instance['updated_at'] - instance['prev_updated_at'])\
             .seconds
         num_cpu = instance.instance['vcpus']
-        cpu_load = float(delta_cpu_time)/(float(delta_time)*(10**7)*num_cpu)
+        cpu_load = float(delta_cpu_time) / \
+            (float(delta_time) * (10 ** 7) * num_cpu)
         cpu_load = round(cpu_load, 2)
-        LOG.info(_(cpu_load))
+        return cpu_load
 
     def _choose_instance_to_migrate(self, instances, compute_nodes):
         instances_params = []
         for i in instances:
-            instance = {'uuid': i.instance['uuid']}
-            instance['cpu'] = self._calculate_cpu(i)
-            instance['memory'] = i['mem']
-            instance['io'] = i['block_dev_iops'] - i['prev_block_dev_iops']
-            instances_params.append(instance)
+            instance_weights = {'uuid': i.instance['uuid']}
+            instance_weights['cpu'] = self._calculate_cpu(i)
+            instance_weights['memory'] = i['mem']
+            instance_weights['io'] = i[
+                'block_dev_iops'] - i['prev_block_dev_iops']
+            instances_params.append(instance_weights)
+        normalized_instances = self._normalize_params(instances_params)
 
     def _drs_threshold_function(self, context):
         compute_nodes = self.host_manager.get_nodes_state(context)
@@ -353,8 +391,8 @@ class FilterScheduler(driver.Scheduler):
             cpu_used_percent = node['cpu_used_percent']
             memory_used = node['memory_total'] - node['memory_free']
             memory_used_percent = round(
-                (float(memory_used)/float(node['memory_total'])) * 100.00, 0
-                )
+                (float(memory_used) / float(node['memory_total'])) * 100.00, 0
+            )
             LOG.debug(_(cpu_used_percent))
             LOG.debug(_(memory_used_percent))
             if cpu_used_percent > cpu_td or memory_used_percent > memory_td:
