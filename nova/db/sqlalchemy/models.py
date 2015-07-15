@@ -152,7 +152,7 @@ class ComputeNodeStats(BASE, NovaBase):
     id = Column(Integer, primary_key=True)
     compute_id = Column(Integer, ForeignKey('compute_nodes.id'),
                         nullable=False)
-    memory_free = Column(Integer, nullable=False)
+    memory_used = Column(Integer, nullable=False)
     memory_total = Column(Integer, nullable=False)
     cpu_used_percent = Column(Integer, nullable=True)
     compute_node = orm.relationship(ComputeNode,

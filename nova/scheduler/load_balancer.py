@@ -96,7 +96,7 @@ class LoadBalancer(object):
     def _choose_instance_to_migrate(self, instances, compute_nodes):
         instances_params = []
         for i in instances:
-            if i.instance['vm_state'] == 'active':
+            if i.instance['vm_state'] == 'active' and i.instance['prev_cpu_time']:
                 instance_weights = {'uuid': i.instance['uuid']}
                 instance_weights['cpu'] = self._calculate_cpu(i)
                 instance_weights['memory'] = i['mem']

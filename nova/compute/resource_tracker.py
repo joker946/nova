@@ -394,7 +394,7 @@ class ResourceTracker(object):
     def _make_compute_stats(self, resources):
         if self.compute_node:
             stat = {}
-            stat['memory_free'] = resources['real_memory_mb_used']
+            stat['memory_used'] = resources['real_memory_mb_used']
             stat['memory_total'] = resources['memory_mb']
             stat['cpu_used_percent'] = psutil.cpu_percent()
             stat['compute_id'] = self.compute_node['id']
