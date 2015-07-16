@@ -304,6 +304,9 @@ class HostManager(object):
             raise exception.SchedulerHostFilterNotFound(filter_name=msg)
         return good_filters
 
+    def choose_host_filters(self, filter_cls_names):
+        return self._choose_host_filters(filter_cls_names)
+
     def get_filtered_hosts(self, hosts, filter_properties,
             filter_class_names=None, index=0):
         """Filter hosts and return only ones passing all filters."""

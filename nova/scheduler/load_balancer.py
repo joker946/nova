@@ -22,6 +22,8 @@ from nova import objects
 from nova.i18n import _
 from nova.openstack.common import log as logging
 from nova.openstack.common import importutils
+from nova.scheduler import filters
+from nova.scheduler import utils
 
 
 lb_opts = [
@@ -61,6 +63,11 @@ class LoadBalancer(object):
         self.host_manager = importutils.import_object(
             CONF.scheduler_host_manager)
         self.image_api = image.API()
+        self.glance_creds = client.Client(username=glance_username,
+                                          password=glance_password,
+                                          tenant_name=tenant_name,
+                                          auth_url=auth_url)
+        self.filter_handler = filters.HostFilterHandler()
 
     def _normalize_params(self, instances):
         max_values = {}
@@ -96,6 +103,21 @@ class LoadBalancer(object):
             normalized_instances.append(norm_ins)
         return normalized_instances
 
+    def _get_image(self, image_uuid):
+        creds = self.glance_creds
+        s_catalog = creds.service_catalog.catalog['serviceCatalog']
+        ctx = nova_context.RequestContext(user_id=creds.user_id,
+                                          is_admin=True,
+                                          project_id=creds.project_id,
+                                          user_name=creds.username,
+                                          project_name=creds.project_name,
+                                          roles=['admin'],
+                                          auth_token=creds.auth_token,
+                                          remote_address=None,
+                                          service_catalog=s_catalog,
+                                          request_id=None)
+        return (self.image_api.get(ctx, image_uuid), ctx)
+
     def _calculate_cpu(self, instance):
         delta_cpu_time = instance['cpu_time'] - instance['prev_cpu_time']
         delta_time = (instance['updated_at'] - instance['prev_updated_at'])\
@@ -116,9 +138,9 @@ class LoadBalancer(object):
             weighted_instance['weight'] = weight
             weighted_instances.append(weighted_instance)
         return sorted(weighted_instances,
-                      key=lambda x: x['weight'], reverse=True)
+                      key=lambda x: x['weight'], reverse=False)
 
-    def _choose_instance_to_migrate(self, instances, compute_nodes):
+    def _choose_instance_to_migrate(self, instances):
         instances_params = []
         for i in instances:
             if i.instance['vm_state'] == 'active':
@@ -133,7 +155,7 @@ class LoadBalancer(object):
         LOG.info(_(normalized_instances))
         weighted_instances = self._weight_instances(normalized_instances)
         LOG.info(_(weighted_instances))
-        return weighted_instances
+        return weighted_instances[0]
 
     def _step_threshold_function(self, context):
         compute_nodes = db.get_compute_node_stats(context)
@@ -150,20 +172,40 @@ class LoadBalancer(object):
             LOG.debug(_(cpu_used_percent))
             LOG.debug(_(memory_used_percent))
             if cpu_used_percent > cpu_td or memory_used_percent > memory_td:
-                instances = db.get_instances_stat(
+                return node
+        return []
+
+    def _build_filter_properties(self, context, chosen_instance):
+        expected_attrs = ['info_cache', 'security_groups',
+                          'system_metadata']
+        instance = objects.Instance.get_by_uuid(context,
+                                                chosen_instance['uuid'],
+                                                expected_attrs)
+        image, ctx = self._get_image(instance.get('image_ref'))
+        req_spec = utils.build_request_spec(ctx, image, [instance])
+        LOG.debug(_(req_spec))
+        filter_properties = {'context': ctx}
+        instance_type = req_spec.get('instance_type')
+        project_id = req_spec['instance_properties']['project_id']
+        filter_properties.update({'instance_type': instance_type,
+                                  'request_spec': req_spec,
+                                  'project_id': project_id})
+        return filter_properties
+
+    def _balancer(self, context):
+        node = self._step_threshold_function(context)
+        if node:
+            instances = db.get_instances_stat(
                     context,
                     node.compute_node.hypervisor_hostname)
-                norm_ins = self._choose_instance_to_migrate(instances,
-                                                            compute_nodes)
-                hosts = self.host_manager.get_all_host_states(context)
-                expected_attrs = ['info_cache', 'security_groups',
-                                  'system_metadata']
-                instance = objects.Instance.get_by_uuid(context,
-                                                        '0a46c56c-dea3-4440-9e4a-41c3ae2516eb', expected_attrs)
-                # im = self.image_api.get(context, instance.get('image_ref'))
-                LOG.debug(_(instance.__dict__))
-                # LOG.debug(_(im))
-                LOG.debug(_(list(hosts)))
+            chosen_instance = self._choose_instance_to_migrate(instances)
+            filter_properties = self._build_filter_properties(context,
+                                                              chosen_instance)
+            classes = self.host_manager.choose_host_filters(None)
+            hosts = self.host_manager.get_all_host_states(context)
+            filtered = self.filter_handler.\
+                get_filtered_objects(classes, hosts, filter_properties)
+            LOG.debug(_(filtered))
 
     def indicate_threshold(self, context):
-        return self._step_threshold_function(context)
+        return self._balancer(context)
