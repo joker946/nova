@@ -13,6 +13,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+
 from keystoneclient.v2_0 import client
 from oslo.config import cfg
 from nova import context as nova_context
@@ -41,7 +42,26 @@ lb_opts = [
                  help='Memory weight'),
     cfg.FloatOpt('io_weight',
                  default=1.0,
-                 help='IO weight')
+                 help='IO weight'),
+    cfg.FloatOpt('compute_cpu_weight',
+                 default=1.0,
+                 help='CPU weight'),
+    cfg.FloatOpt('compute_memory_weight',
+                 default=1.0,
+                 help='Memory weight'),
+    cfg.ListOpt('load_balancer_default_filters',
+                default=[
+                    'RetryFilter',
+                    'AvailabilityZoneFilter',
+                    'RealRamFilter',
+                    'ComputeFilter',
+                    'ComputeCapabilitiesFilter',
+                    'ImagePropertiesFilter',
+                    'ServerGroupAntiAffinityFilter',
+                    'ServerGroupAffinityFilter',
+                ],
+                help='Which filter class names to use for filtering hosts '
+                'when not specified in the request.')
 ]
 
 CONF = cfg.CONF
@@ -69,39 +89,39 @@ class LoadBalancer(object):
                                           auth_url=auth_url)
         self.filter_handler = filters.HostFilterHandler()
 
-    def _normalize_params(self, instances):
+    def _normalize_params(self, params, k='uuid'):
         max_values = {}
         min_values = {}
-        normalized_instances = []
-        for instance in instances:
-            for key in instance:
-                if key != 'uuid':
+        normalized_params = []
+        for param in params:
+            for key in param:
+                if key != k:
                     if max_values.get(key):
-                        if max_values[key] < instance[key]:
-                            max_values[key] = instance[key]
+                        if max_values[key] < param[key]:
+                            max_values[key] = param[key]
                     else:
-                        max_values[key] = instance[key]
+                        max_values[key] = param[key]
                     if min_values.get(key):
-                        if min_values[key] > instance[key]:
-                            min_values[key] = instance[key]
+                        if min_values[key] > param[key]:
+                            min_values[key] = param[key]
                     else:
-                        min_values[key] = instance[key]
+                        min_values[key] = param[key]
         LOG.info(_(max_values))
         LOG.info(_(min_values))
-        LOG.info(_(instances))
-        for instance in instances:
+        LOG.info(_(params))
+        for param in params:
             norm_ins = {}
-            for key in instance:
-                if key != 'uuid':
-                    if len(instances) == 1 or max_values[key] == min_values[key]:
+            for key in param:
+                if key != k:
+                    if len(params) == 1 or max_values[key] == min_values[key]:
                         delta_key = 1
                     else:
                         delta_key = max_values[key] - min_values[key]
                     norm_ins[key] = float(
-                        (instance[key] - min_values[key])) / float((delta_key))
-                    norm_ins['uuid'] = instance['uuid']
-            normalized_instances.append(norm_ins)
-        return normalized_instances
+                        (param[key] - min_values[key])) / float((delta_key))
+                    norm_ins[k] = param[k]
+            normalized_params.append(norm_ins)
+        return normalized_params
 
     def _get_image(self, image_uuid):
         creds = self.glance_creds
@@ -127,6 +147,19 @@ class LoadBalancer(object):
             (float(delta_time) * (10 ** 7) * num_cpu)
         cpu_load = round(cpu_load, 2)
         return cpu_load
+
+    def _weight_hosts(self, normalized_hosts):
+        weitghted_hosts = []
+        for host in normalized_hosts:
+            weighted_host = {'host': host['host']}
+            cpu_used = host['cpu_used_percent']
+            memory_used = host['memory_used']
+            weight = CONF.loadbalancer.compute_cpu_weight * cpu_used + \
+                CONF.loadbalancer.compute_memory_weight * memory_used
+            weighted_host['weight'] = weight
+            weitghted_hosts.append(weighted_host)
+        return sorted(weitghted_hosts,
+                      key=lambda x: x['weight'], reverse=False)
 
     def _weight_instances(self, normalized_instances):
         weighted_instances = []
@@ -155,7 +188,58 @@ class LoadBalancer(object):
         LOG.info(_(normalized_instances))
         weighted_instances = self._weight_instances(normalized_instances)
         LOG.info(_(weighted_instances))
-        return weighted_instances[0]
+        chosen_instance = weighted_instances[0]
+        chosen_instance['resources'] = filter(
+            lambda x: x['uuid'] == chosen_instance['uuid'],
+            instances_params)[0]
+        return chosen_instance
+
+    def _build_filter_properties(self, context, chosen_instance, nodes):
+        expected_attrs = ['info_cache', 'security_groups',
+                          'system_metadata']
+        instance = objects.Instance.get_by_uuid(context,
+                                                chosen_instance['uuid'],
+                                                expected_attrs)
+        image, ctx = self._get_image(instance.get('image_ref'))
+        req_spec = utils.build_request_spec(ctx, image, [instance])
+        filter_properties = {'context': ctx}
+        instance_type = req_spec.get('instance_type')
+        project_id = req_spec['instance_properties']['project_id']
+        instance_resources = chosen_instance['resources']
+        dict_nodes = []
+        for n in nodes:
+            dict_node = {'memory_total': n['memory_total'],
+                         'memory_used': n['memory_used'],
+                         'cpu_used_percent': n['cpu_used_percent'],
+                         'host': n.compute_node.hypervisor_hostname}
+            dict_nodes.append(dict_node)
+        filter_properties.update({'instance_type': instance_type,
+                                  'request_spec': req_spec,
+                                  'project_id': project_id,
+                                  'instance_resources': instance_resources,
+                                  'nodes': dict_nodes})
+        LOG.debug(_(filter_properties))
+        return filter_properties
+
+    def _choose_host_to_migrate(self, context, chosen_instance, nodes):
+        filter_properties = self._build_filter_properties(context,
+                                                          chosen_instance,
+                                                          nodes)
+        classes = self.host_manager.choose_host_filters(
+            CONF.loadbalancer.load_balancer_default_filters)
+        hosts = self.host_manager.get_all_host_states(context)
+        filtered = self.filter_handler.get_filtered_objects(classes,
+                                                            hosts,
+                                                            filter_properties)
+        nodes = filter_properties['nodes']
+        for n in nodes:
+            del n['memory_total']
+        filtered_nodes = [
+            n for n in nodes
+            for host in filtered if n['host'] == host.hypervisor_hostname]
+        normalized_hosts = self._normalize_params(filtered_nodes, 'host')
+        weighted_hosts = self._weight_hosts(normalized_hosts)
+        return weighted_hosts[0]
 
     def _step_threshold_function(self, context):
         compute_nodes = db.get_compute_node_stats(context)
@@ -172,40 +256,22 @@ class LoadBalancer(object):
             LOG.debug(_(cpu_used_percent))
             LOG.debug(_(memory_used_percent))
             if cpu_used_percent > cpu_td or memory_used_percent > memory_td:
-                return node
-        return []
-
-    def _build_filter_properties(self, context, chosen_instance):
-        expected_attrs = ['info_cache', 'security_groups',
-                          'system_metadata']
-        instance = objects.Instance.get_by_uuid(context,
-                                                chosen_instance['uuid'],
-                                                expected_attrs)
-        image, ctx = self._get_image(instance.get('image_ref'))
-        req_spec = utils.build_request_spec(ctx, image, [instance])
-        LOG.debug(_(req_spec))
-        filter_properties = {'context': ctx}
-        instance_type = req_spec.get('instance_type')
-        project_id = req_spec['instance_properties']['project_id']
-        filter_properties.update({'instance_type': instance_type,
-                                  'request_spec': req_spec,
-                                  'project_id': project_id})
-        return filter_properties
+                return node, compute_nodes
+        return [], []
 
     def _balancer(self, context):
-        node = self._step_threshold_function(context)
+        node, nodes = self._step_threshold_function(context)
         if node:
             instances = db.get_instances_stat(
-                    context,
-                    node.compute_node.hypervisor_hostname)
+                context,
+                node.compute_node.hypervisor_hostname)
             chosen_instance = self._choose_instance_to_migrate(instances)
-            filter_properties = self._build_filter_properties(context,
-                                                              chosen_instance)
-            classes = self.host_manager.choose_host_filters(None)
-            hosts = self.host_manager.get_all_host_states(context)
-            filtered = self.filter_handler.\
-                get_filtered_objects(classes, hosts, filter_properties)
-            LOG.debug(_(filtered))
+            LOG.debug(_(chosen_instance))
+            chosen_host = self._choose_host_to_migrate(context,
+                                                       chosen_instance,
+                                                       nodes)
+            selected_pair = {chosen_host['host']: chosen_instance['uuid']}
+            LOG.debug(_(selected_pair))
 
     def indicate_threshold(self, context):
         return self._balancer(context)
