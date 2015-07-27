@@ -40,6 +40,7 @@ class RealRamFilter(filters.BaseHostFilter):
         hosts = filter_properties['nodes']
         host = filter(
             lambda x: x['host'] == host_state.hypervisor_hostname, hosts)[0]
+        # TODO: use conf param
         free_ram_mb = host['memory_total'] - host['memory_used'] - 512
         if requested_ram < free_ram_mb:
             return True

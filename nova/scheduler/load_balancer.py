@@ -20,6 +20,7 @@ from nova import context as nova_context
 from nova import db
 from nova import image
 from nova import objects
+from nova.compute import api as compute_api
 from nova.i18n import _
 from nova.openstack.common import log as logging
 from nova.openstack.common import importutils
@@ -88,6 +89,7 @@ class LoadBalancer(object):
                                           tenant_name=tenant_name,
                                           auth_url=auth_url)
         self.filter_handler = filters.HostFilterHandler()
+        self.compute_api = compute_api.API()
 
     def _normalize_params(self, params, k='uuid'):
         max_values = {}
@@ -123,7 +125,7 @@ class LoadBalancer(object):
             normalized_params.append(norm_ins)
         return normalized_params
 
-    def _get_image(self, image_uuid):
+    def _get_context(self):
         creds = self.glance_creds
         s_catalog = creds.service_catalog.catalog['serviceCatalog']
         ctx = nova_context.RequestContext(user_id=creds.user_id,
@@ -136,17 +138,29 @@ class LoadBalancer(object):
                                           remote_address=None,
                                           service_catalog=s_catalog,
                                           request_id=None)
+        return ctx
+
+    def _get_image(self, image_uuid):
+        ctx = self._get_context()
         return (self.image_api.get(ctx, image_uuid), ctx)
 
+    def _get_instance_object(self, context, uuid):
+        expected_attrs = ['info_cache', 'security_groups',
+                          'system_metadata']
+        return objects.Instance.get_by_uuid(context, uuid, expected_attrs)
+
     def _calculate_cpu(self, instance):
+        LOG.debug(_(instance.instance['uuid']))
         delta_cpu_time = instance['cpu_time'] - instance['prev_cpu_time']
         delta_time = (instance['updated_at'] - instance['prev_updated_at'])\
             .seconds
         num_cpu = instance.instance['vcpus']
-        cpu_load = float(delta_cpu_time) / \
-            (float(delta_time) * (10 ** 7) * num_cpu)
-        cpu_load = round(cpu_load, 2)
-        return cpu_load
+        if delta_time:
+            cpu_load = float(delta_cpu_time) / \
+                (float(delta_time) * (10 ** 7) * num_cpu)
+            cpu_load = round(cpu_load, 2)
+            return cpu_load
+        return 0
 
     def _weight_hosts(self, normalized_hosts):
         weitghted_hosts = []
@@ -176,14 +190,15 @@ class LoadBalancer(object):
     def _choose_instance_to_migrate(self, instances):
         instances_params = []
         for i in instances:
-            if i.instance['vm_state'] == 'active':
-                if i['prev_cpu_time']:
-                    instance_weights = {'uuid': i.instance['uuid']}
-                    instance_weights['cpu'] = self._calculate_cpu(i)
-                    instance_weights['memory'] = i['mem']
-                    instance_weights['io'] = i[
-                        'block_dev_iops'] - i['prev_block_dev_iops']
-                    instances_params.append(instance_weights)
+            if i.instance['task_state'] != 'migrating':
+                if i.instance['vm_state'] == 'active':
+                    if i['prev_cpu_time']:
+                        instance_weights = {'uuid': i.instance['uuid']}
+                        instance_weights['cpu'] = self._calculate_cpu(i)
+                        instance_weights['memory'] = i['mem']
+                        instance_weights['io'] = i[
+                            'block_dev_iops'] - i['prev_block_dev_iops']
+                        instances_params.append(instance_weights)
         normalized_instances = self._normalize_params(instances_params)
         LOG.info(_(normalized_instances))
         weighted_instances = self._weight_instances(normalized_instances)
@@ -195,11 +210,7 @@ class LoadBalancer(object):
         return chosen_instance
 
     def _build_filter_properties(self, context, chosen_instance, nodes):
-        expected_attrs = ['info_cache', 'security_groups',
-                          'system_metadata']
-        instance = objects.Instance.get_by_uuid(context,
-                                                chosen_instance['uuid'],
-                                                expected_attrs)
+        instance = self._get_instance_object(context, chosen_instance['uuid'])
         image, ctx = self._get_image(instance.get('image_ref'))
         req_spec = utils.build_request_spec(ctx, image, [instance])
         filter_properties = {'context': ctx}
@@ -272,6 +283,14 @@ class LoadBalancer(object):
                                                        nodes)
             selected_pair = {chosen_host['host']: chosen_instance['uuid']}
             LOG.debug(_(selected_pair))
+            if node.compute_node.hypervisor_hostname == chosen_host['host']:
+                LOG.debug("Source host is optimal."
+                          " Live Migration will be cancelled.")
+                return
+            instance = self._get_instance_object(context,
+                                                 chosen_instance['uuid'])
+            self.compute_api.live_migrate(self._get_context(), instance, False,
+                                          False, chosen_host['host'])
 
     def indicate_threshold(self, context):
         return self._balancer(context)
