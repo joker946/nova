@@ -190,15 +190,13 @@ class LoadBalancer(object):
     def _choose_instance_to_migrate(self, instances):
         instances_params = []
         for i in instances:
-            if i.instance['task_state'] != 'migrating':
-                if i.instance['vm_state'] == 'active':
-                    if i['prev_cpu_time']:
-                        instance_weights = {'uuid': i.instance['uuid']}
-                        instance_weights['cpu'] = self._calculate_cpu(i)
-                        instance_weights['memory'] = i['mem']
-                        instance_weights['io'] = i[
-                            'block_dev_iops'] - i['prev_block_dev_iops']
-                        instances_params.append(instance_weights)
+            if i.instance['task_state'] != 'migrating' and i['prev_cpu_time']:
+                instance_weights = {'uuid': i.instance['uuid']}
+                instance_weights['cpu'] = self._calculate_cpu(i)
+                instance_weights['memory'] = i['mem']
+                instance_weights['io'] = i[
+                    'block_dev_iops'] - i['prev_block_dev_iops']
+                instances_params.append(instance_weights)
         normalized_instances = self._normalize_params(instances_params)
         LOG.info(_(normalized_instances))
         weighted_instances = self._weight_instances(normalized_instances)
@@ -252,6 +250,31 @@ class LoadBalancer(object):
         weighted_hosts = self._weight_hosts(normalized_hosts)
         return weighted_hosts[0]
 
+    def _sd_threshold_function(self, context):
+        # Standart Deviation function.
+        compute_nodes = db.get_compute_node_stats(context)
+        instances = []
+        for node in compute_nodes:
+            node_instances = db.get_instances_stat(
+                context,
+                node.compute_node.hypervisor_hostname)
+            instances.extend(node_instances)
+        vms_ram = {}
+        for instance in instances:
+            if vms_ram.get(instance.instance['host'], None):
+                vms_ram[instance.instance['host']] += instance['mem']
+            else:
+                vms_ram[instance.instance['host']] = instance['mem']
+        for node in compute_nodes:
+            vms_ram[node.compute_node.hypervisor_hostname] \
+                /= float(node.compute_node.memory_mb)
+        mean = reduce(
+            lambda res, x: vms_ram[res] + vms_ram[x], vms_ram) / len(vms_ram)
+        LOG.debug(_(mean))
+        LOG.debug(_(vms_ram))
+        standart_deviation = reduce(lambda res, x: res + ())
+        return None, None
+
     def _step_threshold_function(self, context):
         compute_nodes = db.get_compute_node_stats(context)
         cpu_td = CONF.loadbalancer.cpu_threshold
@@ -271,7 +294,7 @@ class LoadBalancer(object):
         return [], []
 
     def _balancer(self, context):
-        node, nodes = self._step_threshold_function(context)
+        node, nodes = self._sd_threshold_function(context)
         if node:
             instances = db.get_instances_stat(
                 context,
@@ -285,7 +308,7 @@ class LoadBalancer(object):
             LOG.debug(_(selected_pair))
             if node.compute_node.hypervisor_hostname == chosen_host['host']:
                 LOG.debug("Source host is optimal."
-                          " Live Migration will be cancelled.")
+                          " Live Migration will not be perfomed.")
                 return
             instance = self._get_instance_object(context,
                                                  chosen_instance['uuid'])
