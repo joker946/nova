@@ -14,6 +14,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import math
+
 from keystoneclient.v2_0 import client
 from oslo.config import cfg
 from nova import context as nova_context
@@ -50,6 +52,9 @@ lb_opts = [
     cfg.FloatOpt('compute_memory_weight',
                  default=1.0,
                  help='Memory weight'),
+    cfg.FloatOpt('standart_deviation_threshold',
+                 default=0.3,
+                 help='Standart Deviation Threshold'),
     cfg.ListOpt('load_balancer_default_filters',
                 default=[
                     'RetryFilter',
@@ -163,7 +168,7 @@ class LoadBalancer(object):
         return 0
 
     def _weight_hosts(self, normalized_hosts):
-        weitghted_hosts = []
+        weighted_hosts = []
         for host in normalized_hosts:
             weighted_host = {'host': host['host']}
             cpu_used = host['cpu_used_percent']
@@ -171,8 +176,8 @@ class LoadBalancer(object):
             weight = CONF.loadbalancer.compute_cpu_weight * cpu_used + \
                 CONF.loadbalancer.compute_memory_weight * memory_used
             weighted_host['weight'] = weight
-            weitghted_hosts.append(weighted_host)
-        return sorted(weitghted_hosts,
+            weighted_hosts.append(weighted_host)
+        return sorted(weighted_hosts,
                       key=lambda x: x['weight'], reverse=False)
 
     def _weight_instances(self, normalized_instances):
@@ -269,10 +274,22 @@ class LoadBalancer(object):
             vms_ram[node.compute_node.hypervisor_hostname] \
                 /= float(node.compute_node.memory_mb)
         mean = reduce(
-            lambda res, x: vms_ram[res] + vms_ram[x], vms_ram) / len(vms_ram)
+            lambda res, x: res + vms_ram[x], vms_ram, 0) / len(vms_ram)
         LOG.debug(_(mean))
         LOG.debug(_(vms_ram))
-        standart_deviation = reduce(lambda res, x: res + ())
+        sigma = float(reduce(
+            lambda res, x: res + (vms_ram[x] - mean) ** 2, vms_ram, 0)) \
+            / len(vms_ram)
+        standart_deviation = math.sqrt(sigma)
+        LOG.debug(_(standart_deviation))
+        if standart_deviation > CONF.loadbalancer.standart_deviation_threshold:
+            overloaded_host = sorted(vms_ram, key=lambda x: vms_ram[x],
+                                     reverse=True)[0]
+            host = filter(
+                lambda x:
+                x.compute_node.hypervisor_hostname == overloaded_host,
+                compute_nodes)[0]
+            return host, compute_nodes
         return None, None
 
     def _step_threshold_function(self, context):
