@@ -685,7 +685,8 @@ def compute_node_stats_upsert(context, values):
 @require_admin_context
 def get_compute_node_stats(context):
     return model_query(context, models.ComputeNodeStats).\
-        join(models.ComputeNode).options(joinedload('compute_node')).all()
+        join(models.ComputeNode).filter(models.ComputeNode.deleted == 0)\
+        .options(joinedload('compute_node')).all()
 
 
 @require_admin_context
