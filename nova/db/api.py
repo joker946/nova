@@ -235,6 +235,10 @@ def compute_node_update(context, compute_id, values):
     return IMPL.compute_node_update(context, compute_id, values)
 
 
+def instance_cpu_time_update(context, values):
+    return IMPL.instance_cpu_time_update(context, values)
+
+
 def compute_node_stats_upsert(context, values):
     return IMPL.compute_node_stats_upsert(context, values)
 

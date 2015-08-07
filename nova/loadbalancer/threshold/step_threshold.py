@@ -55,5 +55,5 @@ class Step_Threshold(base.Base):
             LOG.debug(_(cpu_used_percent))
             LOG.debug(_(memory_used_percent))
             if cpu_used_percent > cpu_td or memory_used_percent > memory_td:
-                return node, compute_nodes
-        return [], []
+                return node, compute_nodes, {}
+        return [], [], {}

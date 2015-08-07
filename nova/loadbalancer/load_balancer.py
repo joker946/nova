@@ -63,6 +63,8 @@ CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 CONF.register_opts(lb_opts, 'loadbalancer')
 CONF.import_opt('scheduler_host_manager', 'nova.scheduler.driver')
+
+
 SUPPORTED_THRESHOLD_FUNCTIONS = [
     'step_threshold',
     'standart_deviation'
@@ -89,30 +91,37 @@ class LoadBalancer(object):
 
     def _weight_hosts(self, normalized_hosts):
         weighted_hosts = []
+        compute_cpu_weight = CONF.loadbalancer.compute_cpu_weight
+        compute_memory_weight = CONF.loadbalancer.compute_memory_weight
         for host in normalized_hosts:
             weighted_host = {'host': host['host']}
             cpu_used = host['cpu_used_percent']
             memory_used = host['memory_used']
-            weight = CONF.loadbalancer.compute_cpu_weight * cpu_used + \
-                CONF.loadbalancer.compute_memory_weight * memory_used
+            weight = compute_cpu_weight * cpu_used + \
+                compute_memory_weight * memory_used
             weighted_host['weight'] = weight
             weighted_hosts.append(weighted_host)
         return sorted(weighted_hosts,
                       key=lambda x: x['weight'], reverse=False)
 
-    def _weight_instances(self, normalized_instances):
+    def _weight_instances(self, normalized_instances, extra_info=None):
         weighted_instances = []
+        cpu_weight = CONF.loadbalancer.cpu_weight
+        if extra_info.get('k_cpu'):
+            cpu_weight = extra_info['k_cpu']
+        memory_weight = CONF.loadbalancer.memory_weight
+        io_weight = CONF.loadbalancer.io_weight
         for instance in normalized_instances:
             weighted_instance = {'uuid': instance['uuid']}
-            weight = CONF.loadbalancer.cpu_weight * instance['cpu'] + \
-                CONF.loadbalancer.memory_weight * instance['memory'] + \
-                CONF.loadbalancer.io_weight * instance['io']
+            weight = cpu_weight * instance['cpu'] + \
+                memory_weight * instance['memory'] + \
+                io_weight * instance['io']
             weighted_instance['weight'] = weight
             weighted_instances.append(weighted_instance)
         return sorted(weighted_instances,
                       key=lambda x: x['weight'], reverse=False)
 
-    def _choose_instance_to_migrate(self, instances):
+    def _choose_instance_to_migrate(self, instances, extra_info=None):
         instances_params = []
         for i in instances:
             if i.instance['task_state'] != 'migrating' and i['prev_cpu_time']:
@@ -124,7 +133,12 @@ class LoadBalancer(object):
                 instances_params.append(instance_weights)
         normalized_instances = lb_utils.normalize_params(instances_params)
         LOG.info(_(normalized_instances))
-        weighted_instances = self._weight_instances(normalized_instances)
+        if extra_info.get('cpu_overload'):
+            normalized_instances = filter(lambda x: x['memory'] == 0,
+                                          normalized_instances)
+            extra_info['k_cpu'] = -1
+        weighted_instances = self._weight_instances(normalized_instances,
+                                                    extra_info)
         LOG.info(_(weighted_instances))
         chosen_instance = weighted_instances[0]
         chosen_instance['resources'] = filter(
@@ -153,12 +167,13 @@ class LoadBalancer(object):
         return weighted_hosts[0]
 
     def _balancer(self, context):
-        node, nodes = self.threshold_function.indicate(context)
+        node, nodes, extra_info = self.threshold_function.indicate(context)
         if node:
             instances = db.get_instances_stat(
                 context,
                 node.compute_node.hypervisor_hostname)
-            chosen_instance = self._choose_instance_to_migrate(instances)
+            chosen_instance = self._choose_instance_to_migrate(instances,
+                                                               extra_info)
             LOG.debug(_(chosen_instance))
             chosen_host = self._choose_host_to_migrate(context,
                                                        chosen_instance,
@@ -173,6 +188,9 @@ class LoadBalancer(object):
                                                     chosen_instance['uuid'])
             self.compute_api.live_migrate(lb_utils.get_context(), instance,
                                           False, False, chosen_host['host'])
+            db.instance_cpu_time_update(
+                context,
+                {'instance_uuid': chosen_instance['uuid']})
 
     def indicate_threshold(self, context):
         return self._balancer(context)

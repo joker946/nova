@@ -26,9 +26,13 @@ import math
 
 
 lb_opts = [
-    cfg.FloatOpt('standart_deviation_threshold',
+    cfg.FloatOpt('standart_deviation_threshold_cpu',
+                 default=0.05,
+                 help='Standart Deviation Threshold'),
+    cfg.FloatOpt('standart_deviation_threshold_memory',
                  default=0.3,
-                 help='Standart Deviation Threshold')]
+                 help='Standart Deviation Threshold')
+    ]
 
 
 LOG = logging.getLogger(__name__)
@@ -42,7 +46,8 @@ class Standart_Deviation(base.Base):
         pass
 
     def indicate(self, context):
-        sd_threshold = CONF.loadbalancer.standart_deviation_threshold
+        cpu_threshold = CONF.loadbalancer.standart_deviation_threshold_cpu
+        mem_threshold = CONF.loadbalancer.standart_deviation_threshold_memory
         compute_nodes = db.get_compute_node_stats(context)
         instances = []
         for node in compute_nodes:
@@ -86,7 +91,7 @@ class Standart_Deviation(base.Base):
         cpu_sd = math.sqrt(variance_cpu)
         LOG.debug(_(cpu_sd))
         LOG.debug(_(ram_sd))
-        if cpu_sd > sd_threshold or ram_sd > sd_threshold:
+        if cpu_sd > cpu_threshold or ram_sd > mem_threshold:
             overloaded_host = sorted(vms_ram, key=lambda x: vms_ram[x]['mem'],
                                      reverse=True)[0]
             host = filter(
@@ -94,5 +99,8 @@ class Standart_Deviation(base.Base):
                 x.compute_node.hypervisor_hostname == overloaded_host,
                 compute_nodes)[0]
             LOG.debug(_(host))
-            return host, compute_nodes
-        return [], []
+            # Additional info about overload details
+            if cpu_sd > cpu_threshold:
+                return host, compute_nodes, {'cpu_overload': True}
+            return host, compute_nodes, {}
+        return [], [], {}
