@@ -142,12 +142,18 @@ def normalize_params(params, k='uuid'):
     return normalized_params
 
 
-def calculate_cpu(instance):
+def calculate_cpu(instance, compute_nodes=None):
     LOG.debug(_(instance.instance['uuid']))
+    instance_host = instance.instance['host']
     delta_cpu_time = instance['cpu_time'] - instance['prev_cpu_time']
     delta_time = (instance['updated_at'] - instance['prev_updated_at'])\
         .seconds
-    num_cpu = instance.instance['vcpus']
+    if compute_nodes:
+        num_cpu = filter(
+          lambda x: x.compute_node.hypervisor_hostname == instance_host,
+          compute_nodes)[0].compute_node.vcpus
+    else:
+        num_cpu = instance.instance['vcpus']
     if delta_time:
         cpu_load = float(delta_cpu_time) / \
             (float(delta_time) * (10 ** 7) * num_cpu)

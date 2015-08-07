@@ -17,6 +17,7 @@
 from nova import db
 from nova.i18n import _
 from nova.loadbalancer.threshold import base
+from nova.loadbalancer import utils
 from nova.openstack.common import log as logging
 
 from oslo.config import cfg
@@ -36,10 +37,12 @@ CONF.register_opts(lb_opts, 'loadbalancer')
 
 
 class Standart_Deviation(base.Base):
+
     def __init__(self):
         pass
 
     def indicate(self, context):
+        sd_threshold = CONF.loadbalancer.standart_deviation_threshold
         compute_nodes = db.get_compute_node_stats(context)
         instances = []
         for node in compute_nodes:
@@ -49,27 +52,42 @@ class Standart_Deviation(base.Base):
             instances.extend(node_instances)
         vms_ram = {}
         for instance in instances:
+            cpu_util = utils.calculate_cpu(instance, compute_nodes)
             if vms_ram.get(instance.instance['host'], None):
-                vms_ram[instance.instance['host']] += instance['mem']
+                vms_ram[instance.instance['host']]['mem'] += instance['mem']
+                vms_ram[instance.instance['host']]['cpu'] += cpu_util
             else:
-                vms_ram[instance.instance['host']] = instance['mem']
+                vms_ram[instance.instance['host']] = {}
+                vms_ram[instance.instance['host']]['mem'] = instance['mem']
+                vms_ram[instance.instance['host']]['cpu'] = cpu_util
+
         for node in compute_nodes:
             if node.compute_node.hypervisor_hostname in vms_ram:
-                vms_ram[node.compute_node.hypervisor_hostname] \
+                vms_ram[node.compute_node.hypervisor_hostname]['mem'] \
                     /= float(node.compute_node.memory_mb)
+                vms_ram[node.compute_node.hypervisor_hostname]['cpu'] \
+                    /= 100.00
             else:
-                vms_ram[node.compute_node.hypervisor_hostname] = 0
-        mean = reduce(
-            lambda res, x: res + vms_ram[x], vms_ram, 0) / len(vms_ram)
-        LOG.debug(_(mean))
-        LOG.debug(_(vms_ram))
-        sigma = float(reduce(
-            lambda res, x: res + (vms_ram[x] - mean) ** 2, vms_ram, 0)) \
-            / len(vms_ram)
-        standart_deviation = math.sqrt(sigma)
-        LOG.debug(_(standart_deviation))
-        if standart_deviation > CONF.loadbalancer.standart_deviation_threshold:
-            overloaded_host = sorted(vms_ram, key=lambda x: vms_ram[x],
+                vms_ram[node.compute_node.hypervisor_hostname]['mem'] = 0
+                vms_ram[node.compute_node.hypervisor_hostname]['cpu'] = 0
+        mean_ram = reduce(
+            lambda res, x: res + vms_ram[x]['mem'], vms_ram, 0) / len(vms_ram)
+        mean_cpu = reduce(
+            lambda res, x: res + vms_ram[x]['cpu'], vms_ram, 0) / len(vms_ram)
+        LOG.debug(_(mean_ram))
+        LOG.debug(_(mean_cpu))
+        variance_ram = float(reduce(
+            lambda res, x: res + (vms_ram[x]['mem'] - mean_ram) ** 2,
+            vms_ram, 0)) / len(vms_ram)
+        variance_cpu = float(reduce(
+            lambda res, x: res + (vms_ram[x]['cpu'] - mean_cpu) ** 2,
+            vms_ram, 0)) / len(vms_ram)
+        ram_sd = math.sqrt(variance_ram)
+        cpu_sd = math.sqrt(variance_cpu)
+        LOG.debug(_(cpu_sd))
+        LOG.debug(_(ram_sd))
+        if cpu_sd > sd_threshold or ram_sd > sd_threshold:
+            overloaded_host = sorted(vms_ram, key=lambda x: vms_ram[x]['mem'],
                                      reverse=True)[0]
             host = filter(
                 lambda x:
