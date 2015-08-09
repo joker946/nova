@@ -32,6 +32,7 @@ ram_allocation_ratio_opt = cfg.FloatOpt('ram_allocation_ratio',
 
 CONF = cfg.CONF
 CONF.register_opt(ram_allocation_ratio_opt)
+CONF.import_opt('reserved_host_memory_mb', 'nova.compute.resource_tracker')
 
 
 class RealRamFilter(filters.BaseHostFilter):
@@ -40,8 +41,8 @@ class RealRamFilter(filters.BaseHostFilter):
         hosts = filter_properties['nodes']
         host = filter(
             lambda x: x['host'] == host_state.hypervisor_hostname, hosts)[0]
-        # TODO: use conf param
-        free_ram_mb = host['memory_total'] - host['memory_used'] - 512
+        free_ram_mb = host['memory_total'] - host['memory_used'] - \
+            CONF.reserved_host_memory_mb
         if requested_ram < free_ram_mb:
             return True
         return False
