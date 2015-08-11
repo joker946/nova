@@ -25,6 +25,7 @@ from nova.scheduler import utils
 
 from oslo.config import cfg
 
+import math
 
 auth_options = [
     cfg.StrOpt('admin_user',
@@ -142,10 +143,51 @@ def normalize_params(params, k='uuid'):
     return normalized_params
 
 
+def fill_compute_stats(instances, compute_nodes):
+    host_loads = {}
+    for instance in instances:
+            cpu_util = calculate_cpu(instance, compute_nodes)
+            if instance.instance['host'] in host_loads:
+                host_loads[instance.instance['host']]['mem'] += instance['mem']
+                host_loads[instance.instance['host']]['cpu'] += cpu_util
+            else:
+                host_loads[instance.instance['host']] = {}
+                host_loads[instance.instance['host']]['mem'] = instance['mem']
+                host_loads[instance.instance['host']]['cpu'] = cpu_util
+    for node in compute_nodes:
+        if node.compute_node.hypervisor_hostname not in host_loads:
+            host_loads[node.compute_node.hypervisor_hostname] = {}
+            host_loads[node.compute_node.hypervisor_hostname]['mem'] = 0
+            host_loads[node.compute_node.hypervisor_hostname]['cpu'] = 0
+    return host_loads
+
+
+def calculate_host_loads(compute_nodes, compute_stats):
+    host_loads = compute_stats
+    for node in compute_nodes:
+        host_loads[node.compute_node.hypervisor_hostname]['mem'] \
+            /= float(node.compute_node.memory_mb)
+        host_loads[node.compute_node.hypervisor_hostname]['cpu'] \
+            /= 100.00
+    return host_loads
+
+
+def calculate_sd(hosts, param):
+    mean = reduce(lambda res, x: res + hosts[x][param],
+                  hosts, 0) / len(hosts)
+    LOG.debug("Mean %(param)s: %(mean)f", {'mean': mean, 'param': param})
+    variaton = float(reduce(
+        lambda res, x: res + (hosts[x][param] - mean) ** 2,
+        hosts, 0)) / len(hosts)
+    sd = math.sqrt(variaton)
+    LOG.debug("SD %(param)s: %(sd)f", {'sd': sd, 'param': param})
+    return sd
+
+
 def calculate_cpu(instance, compute_nodes=None):
     instance_host = instance.instance['host']
     if not instance['prev_cpu_time']:
-        return 0
+        instance['prev_cpu_time'] = 0
     if instance['prev_cpu_time'] > instance['cpu_time']:
         instance['prev_cpu_time'] = 0
     delta_cpu_time = instance['cpu_time'] - instance['prev_cpu_time']

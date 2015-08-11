@@ -22,8 +22,6 @@ from nova.openstack.common import log as logging
 
 from oslo.config import cfg
 
-import math
-
 
 lb_opts = [
     cfg.FloatOpt('standart_deviation_threshold_cpu',
@@ -45,51 +43,23 @@ class Standart_Deviation(base.Base):
     def __init__(self):
         pass
 
-    def _calculate_sd(self, hosts, param):
-        mean = reduce(lambda res, x: res + hosts[x][param],
-                      hosts, 0) / len(hosts)
-        LOG.debug("Mean %(param)s: %(mean)f", {'mean': mean, 'param': param})
-        variaton = float(reduce(
-            lambda res, x: res + (hosts[x][param] - mean) ** 2,
-            hosts, 0)) / len(hosts)
-        sd = math.sqrt(variaton)
-        LOG.debug("SD %(param)s: %(sd)f", {'sd': sd, 'param': param})
-        return sd
-
     def indicate(self, context):
         cpu_threshold = CONF.loadbalancer.standart_deviation_threshold_cpu
         mem_threshold = CONF.loadbalancer.standart_deviation_threshold_memory
         compute_nodes = db.get_compute_node_stats(context)
         instances = []
+        # TODO: Make only one query that returns all instances placed on active
+        # hosts.
         for node in compute_nodes:
             node_instances = db.get_instances_stat(
                 context,
                 node.compute_node.hypervisor_hostname)
             instances.extend(node_instances)
-        host_loads = {}
-        for instance in instances:
-            cpu_util = utils.calculate_cpu(instance, compute_nodes)
-            if host_loads.get(instance.instance['host'], None):
-                host_loads[instance.instance['host']]['mem'] += instance['mem']
-                host_loads[instance.instance['host']]['cpu'] += cpu_util
-            else:
-                host_loads[instance.instance['host']] = {}
-                host_loads[instance.instance['host']]['mem'] = instance['mem']
-                host_loads[instance.instance['host']]['cpu'] = cpu_util
-
-        for node in compute_nodes:
-            if node.compute_node.hypervisor_hostname in host_loads:
-                host_loads[node.compute_node.hypervisor_hostname]['mem'] \
-                    /= float(node.compute_node.memory_mb)
-                host_loads[node.compute_node.hypervisor_hostname]['cpu'] \
-                    /= 100.00
-            else:
-                host_loads[node.compute_node.hypervisor_hostname] = {}
-                host_loads[node.compute_node.hypervisor_hostname]['mem'] = 0
-                host_loads[node.compute_node.hypervisor_hostname]['cpu'] = 0
+        compute_stats = utils.fill_compute_stats(instances, compute_nodes)
+        host_loads = utils.calculate_host_loads(compute_nodes, compute_stats)
         LOG.debug(_(host_loads))
-        ram_sd = self._calculate_sd(host_loads, 'mem')
-        cpu_sd = self._calculate_sd(host_loads, 'cpu')
+        ram_sd = utils.calculate_sd(host_loads, 'mem')
+        cpu_sd = utils.calculate_sd(host_loads, 'cpu')
         if cpu_sd > cpu_threshold or ram_sd > mem_threshold:
             extra_info = {'cpu_overload': False}
             if cpu_sd > cpu_threshold:

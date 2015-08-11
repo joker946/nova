@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
+from copy import deepcopy
 from oslo.config import cfg
 from nova import db
 from nova.compute import api as compute_api
@@ -71,7 +71,7 @@ SUPPORTED_THRESHOLD_FUNCTIONS = [
 ]
 
 
-def get_threshold_function(func_name):
+def get_threshold_class(func_name):
     if func_name in SUPPORTED_THRESHOLD_FUNCTIONS:
         namespace = 'nova.loadbalancer.threshold'
         mgr = driver.DriverManager(namespace, func_name)
@@ -86,8 +86,46 @@ class LoadBalancer(object):
             CONF.scheduler_host_manager)
         self.filter_handler = filters.HostFilterHandler()
         self.compute_api = compute_api.API()
-        self.threshold_function = get_threshold_function(
+        self.threshold_class = get_threshold_class(
             CONF.loadbalancer.threshold_function)
+
+    def _simulate_migration(self, instance, node, host_loads, compute_nodes):
+        source_host = instance.instance['host']
+        target_host = node.compute_node.hypervisor_hostname
+        vm_ram = instance['mem']
+        vm_cpu = lb_utils.calculate_cpu(instance, compute_nodes)
+        _host_loads = deepcopy(host_loads)
+        LOG.debug(_(_host_loads))
+        _host_loads[source_host]['mem'] -= vm_ram
+        _host_loads[source_host]['cpu'] -= vm_cpu
+        _host_loads[target_host]['mem'] += vm_ram
+        _host_loads[target_host]['cpu'] += vm_cpu
+        _host_loads = lb_utils.calculate_host_loads(compute_nodes, _host_loads)
+        ram_sd = lb_utils.calculate_sd(_host_loads, 'mem')
+        cpu_sd = lb_utils.calculate_sd(_host_loads, 'cpu')
+        return {'cpu_sd': cpu_sd, 'ram_sd': ram_sd}
+
+    def min_sd(self, context, compute_nodes):
+        instances = []
+        for node in compute_nodes:
+            node_instances = db.get_instances_stat(
+                context,
+                node.compute_node.hypervisor_hostname)
+            instances.extend(node_instances)
+        host_loads = lb_utils.fill_compute_stats(instances, compute_nodes)
+        LOG.debug(_(host_loads))
+        vm_host_map = []
+        for instance in instances:
+            for node in compute_nodes:
+                h_hostname = node.compute_node.hypervisor_hostname
+                # Source host shouldn't be use.
+                if instance.instance['host'] != h_hostname:
+                    sd = self._simulate_migration(instance, node, host_loads,
+                                                  compute_nodes)
+                    vm_host_map.append({'host': h_hostname,
+                                        'vm': instance.instance['uuid'],
+                                        'sd': sd})
+        LOG.debug(_(vm_host_map))
 
     def _weight_hosts(self, normalized_hosts):
         weighted_hosts = []
@@ -167,31 +205,32 @@ class LoadBalancer(object):
         weighted_hosts = self._weight_hosts(normalized_hosts)
         return weighted_hosts[0]
 
-    def _balancer(self, context):
-        node, nodes, extra_info = self.threshold_function.indicate(context)
-        if node:
-            instances = db.get_instances_stat(
+    def _classic(self, context, node, nodes, extra_info):
+        instances = db.get_instances_stat(
                 context,
                 node.compute_node.hypervisor_hostname)
-            chosen_instance = self._choose_instance_to_migrate(instances,
-                                                               extra_info)
-            LOG.debug(_(chosen_instance))
-            chosen_host = self._choose_host_to_migrate(context,
-                                                       chosen_instance,
-                                                       nodes)
-            selected_pair = {chosen_host['host']: chosen_instance['uuid']}
-            LOG.debug(_(selected_pair))
-            if node.compute_node.hypervisor_hostname == chosen_host['host']:
-                LOG.debug("Source host is optimal."
-                          " Live Migration will not be perfomed.")
-                return
-            instance = lb_utils.get_instance_object(context,
-                                                    chosen_instance['uuid'])
-            self.compute_api.live_migrate(lb_utils.get_context(), instance,
-                                          False, False, chosen_host['host'])
-            db.instance_cpu_time_update(
-                context,
-                {'instance_uuid': chosen_instance['uuid']})
+        chosen_instance = self._choose_instance_to_migrate(instances,
+                                                           extra_info)
+        LOG.debug(_(chosen_instance))
+        chosen_host = self._choose_host_to_migrate(context,
+                                                   chosen_instance,
+                                                   nodes)
+        selected_pair = {chosen_host['host']: chosen_instance['uuid']}
+        LOG.debug(_(selected_pair))
+        if node.compute_node.hypervisor_hostname == chosen_host['host']:
+            LOG.debug("Source host is optimal."
+                      " Live Migration will not be perfomed.")
+            return
+        instance = lb_utils.get_instance_object(context,
+                                                chosen_instance['uuid'])
+        self.compute_api.live_migrate(lb_utils.get_context(), instance,
+                                      False, False, chosen_host['host'])
+
+    def _balancer(self, context):
+        node, nodes, extra_info = self.threshold_class.indicate(context)
+        if node:
+            self.min_sd(context, nodes)
+            # self._classic(context, node, nodes, extra_info)
 
     def indicate_threshold(self, context):
         return self._balancer(context)
