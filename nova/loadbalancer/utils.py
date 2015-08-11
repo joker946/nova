@@ -146,6 +146,8 @@ def calculate_cpu(instance, compute_nodes=None):
     instance_host = instance.instance['host']
     if not instance['prev_cpu_time']:
         return 0
+    if instance['prev_cpu_time'] > instance['cpu_time']:
+        instance['prev_cpu_time'] = 0
     delta_cpu_time = instance['cpu_time'] - instance['prev_cpu_time']
     delta_time = (instance['updated_at'] - instance['prev_updated_at'])\
         .seconds

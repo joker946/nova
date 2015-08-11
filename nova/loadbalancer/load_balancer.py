@@ -131,6 +131,7 @@ class LoadBalancer(object):
                 instance_weights['io'] = i[
                     'block_dev_iops'] - i['prev_block_dev_iops']
                 instances_params.append(instance_weights)
+        LOG.debug(_(instances_params))
         normalized_instances = lb_utils.normalize_params(instances_params)
         LOG.info(_(normalized_instances))
         if extra_info.get('cpu_overload'):

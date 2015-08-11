@@ -648,19 +648,6 @@ def compute_node_update(context, compute_id, values):
 
 @require_admin_context
 @_retry_on_deadlock
-def instance_cpu_time_update(context, values):
-    session = get_session()
-    instance_uuid = values['instance_uuid']
-    with session.begin():
-        instance = model_query(context, models.InstanceStats,
-                               session=session).\
-            filter(models.InstanceStats.instance_uuid == instance_uuid).first()
-        if instance:
-            instance.update({'prev_cpu_time': None})
-
-
-@require_admin_context
-@_retry_on_deadlock
 def compute_node_stats_upsert(context, values):
     session = get_session()
     compute_node = values['node']

@@ -32,7 +32,7 @@ lb_opts = [
     cfg.FloatOpt('standart_deviation_threshold_memory',
                  default=0.3,
                  help='Standart Deviation Threshold')
-    ]
+]
 
 
 LOG = logging.getLogger(__name__)
@@ -45,6 +45,17 @@ class Standart_Deviation(base.Base):
     def __init__(self):
         pass
 
+    def _calculate_sd(self, hosts, param):
+        mean = reduce(lambda res, x: res + hosts[x][param],
+                      hosts, 0) / len(hosts)
+        LOG.debug("Mean %(param)s: %(mean)f", {'mean': mean, 'param': param})
+        variaton = float(reduce(
+            lambda res, x: res + (hosts[x][param] - mean) ** 2,
+            hosts, 0)) / len(hosts)
+        sd = math.sqrt(variaton)
+        LOG.debug("SD %(param)s: %(sd)f", {'sd': sd, 'param': param})
+        return sd
+
     def indicate(self, context):
         cpu_threshold = CONF.loadbalancer.standart_deviation_threshold_cpu
         mem_threshold = CONF.loadbalancer.standart_deviation_threshold_memory
@@ -55,52 +66,45 @@ class Standart_Deviation(base.Base):
                 context,
                 node.compute_node.hypervisor_hostname)
             instances.extend(node_instances)
-        vms_ram = {}
+        host_loads = {}
         for instance in instances:
             cpu_util = utils.calculate_cpu(instance, compute_nodes)
-            if vms_ram.get(instance.instance['host'], None):
-                vms_ram[instance.instance['host']]['mem'] += instance['mem']
-                vms_ram[instance.instance['host']]['cpu'] += cpu_util
+            if host_loads.get(instance.instance['host'], None):
+                host_loads[instance.instance['host']]['mem'] += instance['mem']
+                host_loads[instance.instance['host']]['cpu'] += cpu_util
             else:
-                vms_ram[instance.instance['host']] = {}
-                vms_ram[instance.instance['host']]['mem'] = instance['mem']
-                vms_ram[instance.instance['host']]['cpu'] = cpu_util
+                host_loads[instance.instance['host']] = {}
+                host_loads[instance.instance['host']]['mem'] = instance['mem']
+                host_loads[instance.instance['host']]['cpu'] = cpu_util
 
         for node in compute_nodes:
-            if node.compute_node.hypervisor_hostname in vms_ram:
-                vms_ram[node.compute_node.hypervisor_hostname]['mem'] \
+            if node.compute_node.hypervisor_hostname in host_loads:
+                host_loads[node.compute_node.hypervisor_hostname]['mem'] \
                     /= float(node.compute_node.memory_mb)
-                vms_ram[node.compute_node.hypervisor_hostname]['cpu'] \
+                host_loads[node.compute_node.hypervisor_hostname]['cpu'] \
                     /= 100.00
             else:
-                vms_ram[node.compute_node.hypervisor_hostname]['mem'] = 0
-                vms_ram[node.compute_node.hypervisor_hostname]['cpu'] = 0
-        mean_ram = reduce(
-            lambda res, x: res + vms_ram[x]['mem'], vms_ram, 0) / len(vms_ram)
-        mean_cpu = reduce(
-            lambda res, x: res + vms_ram[x]['cpu'], vms_ram, 0) / len(vms_ram)
-        LOG.debug(_(mean_ram))
-        LOG.debug(_(mean_cpu))
-        variance_ram = float(reduce(
-            lambda res, x: res + (vms_ram[x]['mem'] - mean_ram) ** 2,
-            vms_ram, 0)) / len(vms_ram)
-        variance_cpu = float(reduce(
-            lambda res, x: res + (vms_ram[x]['cpu'] - mean_cpu) ** 2,
-            vms_ram, 0)) / len(vms_ram)
-        ram_sd = math.sqrt(variance_ram)
-        cpu_sd = math.sqrt(variance_cpu)
-        LOG.debug(_(cpu_sd))
-        LOG.debug(_(ram_sd))
+                host_loads[node.compute_node.hypervisor_hostname] = {}
+                host_loads[node.compute_node.hypervisor_hostname]['mem'] = 0
+                host_loads[node.compute_node.hypervisor_hostname]['cpu'] = 0
+        LOG.debug(_(host_loads))
+        ram_sd = self._calculate_sd(host_loads, 'mem')
+        cpu_sd = self._calculate_sd(host_loads, 'cpu')
         if cpu_sd > cpu_threshold or ram_sd > mem_threshold:
-            overloaded_host = sorted(vms_ram, key=lambda x: vms_ram[x]['mem'],
-                                     reverse=True)[0]
+            extra_info = {'cpu_overload': False}
+            if cpu_sd > cpu_threshold:
+                overloaded_host = sorted(host_loads,
+                                         key=lambda x: host_loads[x]['cpu'],
+                                         reverse=True)[0]
+                extra_info['cpu_overload'] = True
+            else:
+                overloaded_host = sorted(host_loads,
+                                         key=lambda x: host_loads[x]['mem'],
+                                         reverse=True)[0]
             host = filter(
                 lambda x:
                 x.compute_node.hypervisor_hostname == overloaded_host,
                 compute_nodes)[0]
             LOG.debug(_(host))
-            # Additional info about overload details
-            if cpu_sd > cpu_threshold:
-                return host, compute_nodes, {'cpu_overload': True}
-            return host, compute_nodes, {}
+            return host, compute_nodes, extra_info
         return [], [], {}
