@@ -386,14 +386,16 @@ class HostManager(object):
         return self.weight_handler.get_weighed_objects(self.weight_classes,
                 hosts, weight_properties)
 
-    def get_all_host_states(self, context):
+    def get_all_host_states(self, context, hypervisor_hostname=None):
         """Returns a list of HostStates that represents all the hosts
         the HostManager knows about. Also, each of the consumable resources
         in HostState are pre-populated and adjusted based on data in the db.
         """
 
         # Get resource usage across the available compute nodes:
-        compute_nodes = db.compute_node_get_all(context)
+        compute_nodes = db.compute_node_get_all(
+            context,
+            hypervisor_host=hypervisor_hostname)
         seen_nodes = set()
         for compute in compute_nodes:
             service = compute['service']

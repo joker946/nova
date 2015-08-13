@@ -28,12 +28,13 @@ lb_opts = [
                help='LoadBalancer CPU threshold, percent'),
     cfg.IntOpt('memory_threshold',
                default=70,
-               help='LoadBalancer Memory threshold, percent')]
+               help='LoadBalancer Memory threshold, percent')
+]
 
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
-CONF.register_opts(lb_opts, 'loadbalancer')
+CONF.register_opts(lb_opts, 'loadbalancer_step_threshold')
 
 
 class Step_Threshold(base.Base):
@@ -42,8 +43,8 @@ class Step_Threshold(base.Base):
 
     def indicate(self, context):
         compute_nodes = db.get_compute_node_stats(context)
-        cpu_td = CONF.loadbalancer.cpu_threshold
-        memory_td = CONF.loadbalancer.memory_threshold
+        cpu_td = CONF.loadbalancer_step_threshold.cpu_threshold
+        memory_td = CONF.loadbalancer_step_threshold.memory_threshold
         LOG.debug(_(cpu_td))
         LOG.debug(_(memory_td))
         for node in compute_nodes:

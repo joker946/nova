@@ -16,20 +16,34 @@
 
 from nova import db
 from nova.loadbalancer import utils as lb_utils
-from nova.loadbalancer.balancer.base import Base
+from nova.loadbalancer.balancer.base import BaseBalancer
 from nova.i18n import _
 from nova.openstack.common import log as logging
 
 from copy import deepcopy
+from oslo.config import cfg
 
+
+lb_opts = [
+    cfg.FloatOpt('cpu_weight',
+                 default=1.0,
+                 help='LoadBalancer CPU weight.'),
+    cfg.FloatOpt('memory_weight',
+                 default=1.0,
+                 help='LoadBalancer Memory weight.')
+]
 
 LOG = logging.getLogger(__name__)
+CONF = cfg.CONF
+CONF.register_opts(lb_opts, 'loadbalancer_minimizeSD')
 
 
-class MinimizeSD(Base):
+class MinimizeSD(BaseBalancer):
 
     def __init__(self, *args, **kwargs):
         super(MinimizeSD, self).__init__(*args, **kwargs)
+        self.cpu_weight = CONF.loadbalancer_minimizeSD.cpu_weight
+        self.memory_weight = CONF.loadbalancer_minimizeSD.memory_weight
 
     def _simulate_migration(self, instance, node, host_loads, compute_nodes):
         source_host = instance.instance['host']
@@ -45,7 +59,9 @@ class MinimizeSD(Base):
         _host_loads = lb_utils.calculate_host_loads(compute_nodes, _host_loads)
         ram_sd = lb_utils.calculate_sd(_host_loads, 'mem')
         cpu_sd = lb_utils.calculate_sd(_host_loads, 'cpu')
-        return {'cpu_sd': cpu_sd, 'ram_sd': ram_sd}
+        return {'cpu_sd': cpu_sd*self.cpu_weight,
+                'ram_sd': ram_sd*self.memory_weight,
+                'total_sd': cpu_sd*self.cpu_weight + ram_sd*self.memory_weight}
 
     def min_sd(self, context, **kwargs):
         compute_nodes = kwargs.get('nodes')
@@ -69,6 +85,17 @@ class MinimizeSD(Base):
                                         'vm': instance.instance['uuid'],
                                         'sd': sd})
         LOG.debug(_(vm_host_map))
+        vm_host_map = sorted(vm_host_map, key=lambda x: x['sd']['total_sd'])
+        for vm_host in vm_host_map:
+            instance = filter(lambda x: x.instance['uuid'] == vm_host['vm'],
+                              instances)[0]
+            instance_resources = lb_utils.get_instance_resources(instance)
+            if instance_resources:
+                instance = {'uuid': instance.instance['uuid'],
+                            'resources': instance_resources}
+                filtered = self.filter_hosts(context, instance, compute_nodes,
+                                             host=vm_host['host'])
+                LOG.debug(filtered)
 
     def balance(self, context, **kwargs):
         return self.min_sd(context, **kwargs)

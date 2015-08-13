@@ -558,7 +558,7 @@ def compute_node_get_by_service_id(context, service_id):
 
 
 @require_admin_context
-def compute_node_get_all(context, no_date_fields):
+def compute_node_get_all(context, no_date_fields, hypervisor_host=None):
 
     # NOTE(msdubov): Using lower-level 'select' queries and joining the tables
     #                manually here allows to gain 3x speed-up and to have 5x
@@ -577,9 +577,16 @@ def compute_node_get_all(context, no_date_fields):
         def filter_columns(table):
             return [c for c in table.c if c.name not in redundant_columns]
 
-        compute_node_query = sql.select(filter_columns(compute_node)).\
-                                where(compute_node.c.deleted == 0).\
-                                order_by(compute_node.c.service_id)
+        if hypervisor_host:
+            compute_node_query = sql.select(filter_columns(compute_node)).\
+                where(
+                      (compute_node.c.deleted == 0) &
+                      (compute_node.c.hypervisor_hostname == hypervisor_host)
+                     ).order_by(compute_node.c.service_id)
+        else:
+            compute_node_query = sql.select(filter_columns(compute_node)).\
+                where(compute_node.c.deleted == 0)\
+                .order_by(compute_node.c.service_id)
         compute_node_rows = conn.execute(compute_node_query).fetchall()
 
         service_query = sql.select(filter_columns(service)).\

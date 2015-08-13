@@ -24,10 +24,10 @@ from oslo.config import cfg
 
 
 lb_opts = [
-    cfg.FloatOpt('standart_deviation_threshold_cpu',
+    cfg.FloatOpt('threshold_cpu',
                  default=0.05,
                  help='Standart Deviation Threshold'),
-    cfg.FloatOpt('standart_deviation_threshold_memory',
+    cfg.FloatOpt('threshold_memory',
                  default=0.3,
                  help='Standart Deviation Threshold')
 ]
@@ -35,7 +35,7 @@ lb_opts = [
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
-CONF.register_opts(lb_opts, 'loadbalancer')
+CONF.register_opts(lb_opts, 'loadbalancer_standart_deviation')
 
 
 class Standart_Deviation(base.Base):
@@ -44,8 +44,8 @@ class Standart_Deviation(base.Base):
         pass
 
     def indicate(self, context):
-        cpu_threshold = CONF.loadbalancer.standart_deviation_threshold_cpu
-        mem_threshold = CONF.loadbalancer.standart_deviation_threshold_memory
+        cpu_threshold = CONF.loadbalancer_standart_deviation.threshold_cpu
+        mem_threshold = CONF.loadbalancer_standart_deviation.threshold_memory
         compute_nodes = db.get_compute_node_stats(context)
         instances = []
         # TODO: Make only one query that returns all instances placed on active

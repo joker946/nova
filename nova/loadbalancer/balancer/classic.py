@@ -18,7 +18,7 @@ from oslo.config import cfg
 from nova import db
 from nova.compute import api as compute_api
 from nova.loadbalancer import utils as lb_utils
-from nova.loadbalancer.balancer.base import Base
+from nova.loadbalancer.balancer.base import BaseBalancer
 from nova.i18n import _
 from nova.openstack.common import log as logging
 
@@ -44,19 +44,19 @@ lb_opts = [
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
-CONF.register_opts(lb_opts, 'loadbalancer')
+CONF.register_opts(lb_opts, 'loadbalancer_classic')
 CONF.import_opt('scheduler_host_manager', 'nova.scheduler.driver')
 
 
-class Classic(Base):
+class Classic(BaseBalancer):
     def __init__(self, *args, **kwargs):
         super(Classic, self).__init__(*args, **kwargs)
         self.compute_api = compute_api.API()
 
     def _weight_hosts(self, normalized_hosts):
         weighted_hosts = []
-        compute_cpu_weight = CONF.loadbalancer.compute_cpu_weight
-        compute_memory_weight = CONF.loadbalancer.compute_memory_weight
+        compute_cpu_weight = CONF.loadbalancer_classic.compute_cpu_weight
+        compute_memory_weight = CONF.loadbalancer_classic.compute_memory_weight
         for host in normalized_hosts:
             weighted_host = {'host': host['host']}
             cpu_used = host['cpu_used_percent']
@@ -70,11 +70,11 @@ class Classic(Base):
 
     def _weight_instances(self, normalized_instances, extra_info=None):
         weighted_instances = []
-        cpu_weight = CONF.loadbalancer.cpu_weight
+        cpu_weight = CONF.loadbalancer_classic.cpu_weight
         if extra_info.get('k_cpu'):
             cpu_weight = extra_info['k_cpu']
-        memory_weight = CONF.loadbalancer.memory_weight
-        io_weight = CONF.loadbalancer.io_weight
+        memory_weight = CONF.loadbalancer_classic.memory_weight
+        io_weight = CONF.loadbalancer_classic.io_weight
         for instance in normalized_instances:
             weighted_instance = {'uuid': instance['uuid']}
             weight = cpu_weight * instance['cpu'] + \
@@ -88,13 +88,9 @@ class Classic(Base):
     def _choose_instance_to_migrate(self, instances, extra_info=None):
         instances_params = []
         for i in instances:
-            if i.instance['task_state'] != 'migrating' and i['prev_cpu_time']:
-                instance_weights = {'uuid': i.instance['uuid']}
-                instance_weights['cpu'] = lb_utils.calculate_cpu(i)
-                instance_weights['memory'] = i['mem']
-                instance_weights['io'] = i[
-                    'block_dev_iops'] - i['prev_block_dev_iops']
-                instances_params.append(instance_weights)
+            instance_resources = lb_utils.get_instance_resources(i)
+            if instance_resources:
+                instances_params.append(instance_resources)
         LOG.debug(_(instances_params))
         normalized_instances = lb_utils.normalize_params(instances_params)
         LOG.info(_(normalized_instances))
@@ -144,10 +140,7 @@ class Classic(Base):
             LOG.debug("Source host is optimal."
                       " Live Migration will not be perfomed.")
             return
-        instance = lb_utils.get_instance_object(context,
-                                                chosen_instance['uuid'])
-        self.compute_api.live_migrate(lb_utils.get_context(), instance,
-                                      False, False, chosen_host['host'])
+        self.migrate(context, chosen_instance['uuid'], chosen_host['host'])
 
     def balance(self, context, **kwargs):
         return self._classic(context, **kwargs)

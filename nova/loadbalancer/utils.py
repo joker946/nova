@@ -84,6 +84,17 @@ def get_instance_object(context, uuid):
     return objects.Instance.get_by_uuid(context, uuid, expected_attrs)
 
 
+def get_instance_resources(i):
+    if i.instance['task_state'] != 'migrating' and i['prev_cpu_time']:
+        instance_resources = {'uuid': i.instance['uuid']}
+        instance_resources['cpu'] = calculate_cpu(i)
+        instance_resources['memory'] = i['mem']
+        instance_resources['io'] = i[
+            'block_dev_iops'] - i['prev_block_dev_iops']
+        return instance_resources
+    return None
+
+
 def build_filter_properties(context, chosen_instance, nodes):
     instance = get_instance_object(context, chosen_instance['uuid'])
     image, ctx = _get_image(instance.get('image_ref'))
