@@ -14,7 +14,9 @@
 #    under the License.
 
 from oslo.config import cfg
+from nova import manager
 from nova.openstack.common import log as logging
+from nova.openstack.common import periodic_task
 from stevedore import driver
 
 
@@ -61,9 +63,10 @@ def get_threshold_class(class_name):
     raise Exception('Setted up class is not supported.')
 
 
-class LoadBalancer(object):
+class LoadBalancer(manager.Manager):
     def __init__(self, *args, **kwargs):
-        super(LoadBalancer, self).__init__(*args, **kwargs)
+        super(LoadBalancer, self).__init__(service_name='loadbalancer',
+                                           *args, **kwargs)
         self.threshold_class = get_threshold_class(
             CONF.loadbalancer.threshold_class)
         self.balancer_class = get_balancer_class(
@@ -77,5 +80,6 @@ class LoadBalancer(object):
                                                nodes=nodes,
                                                extra_info=extra_info)
 
+    @periodic_task.periodic_task
     def indicate_threshold(self, context):
         return self._balancer(context)

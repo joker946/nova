@@ -16,7 +16,6 @@
 from oslo.config import cfg
 
 from nova import db
-from nova.compute import api as compute_api
 from nova.loadbalancer import utils as lb_utils
 from nova.loadbalancer.balancer.base import BaseBalancer
 from nova.i18n import _
@@ -51,7 +50,6 @@ CONF.import_opt('scheduler_host_manager', 'nova.scheduler.driver')
 class Classic(BaseBalancer):
     def __init__(self, *args, **kwargs):
         super(Classic, self).__init__(*args, **kwargs)
-        self.compute_api = compute_api.API()
 
     def _weight_hosts(self, normalized_hosts):
         weighted_hosts = []
@@ -110,6 +108,8 @@ class Classic(BaseBalancer):
     def _choose_host_to_migrate(self, context, chosen_instance, nodes):
         filtered, filter_properties = self.filter_hosts(context,
                                                         chosen_instance, nodes)
+        if not filtered:
+            return
         nodes = filter_properties['nodes']
         # 'memory_total' field shouldn't be normalized.
         for n in nodes:

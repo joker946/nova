@@ -15,6 +15,7 @@
 
 from oslo.config import cfg
 
+from nova.compute import api as compute_api
 from nova.loadbalancer import utils as lb_utils
 from nova.openstack.common import importutils
 from nova.scheduler import filters
@@ -23,10 +24,10 @@ from nova.scheduler import filters
 lb_opts = [
     cfg.ListOpt('load_balancer_default_filters',
                 default=[
+                    'AggregateInstanceExtraSpecsFilter',
                     'AvailabilityZoneFilter',
                     'RealRamFilter',
                     'ComputeFilter',
-                    'ComputeCapabilitiesFilter',
                     'ImagePropertiesFilter',
                     'ServerGroupAntiAffinityFilter',
                     'ServerGroupAffinityFilter',
@@ -47,6 +48,7 @@ class BaseBalancer(object):
         self.host_manager = importutils.import_object(
             CONF.scheduler_host_manager)
         self.filter_handler = filters.HostFilterHandler()
+        self.compute_api = compute_api.API()
 
     def balance(self, context, **kwargs):
         pass
@@ -57,6 +59,7 @@ class BaseBalancer(object):
                                                              nodes)
         classes = self.host_manager.choose_host_filters(
             CONF.loadbalancer.load_balancer_default_filters)
+        # If hypervisor_hostname is set, query returns only specified host.
         hosts = self.host_manager.get_all_host_states(context,
                                                       hypervisor_hostname=host)
         filtered = self.filter_handler.get_filtered_objects(classes,

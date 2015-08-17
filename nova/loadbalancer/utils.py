@@ -115,7 +115,6 @@ def build_filter_properties(context, chosen_instance, nodes):
                               'project_id': project_id,
                               'instance_resources': instance_resources,
                               'nodes': dict_nodes})
-    LOG.debug(_(filter_properties))
     return filter_properties
 
 

@@ -82,20 +82,25 @@ class MinimizeSD(BaseBalancer):
                     sd = self._simulate_migration(instance, node, host_loads,
                                                   compute_nodes)
                     vm_host_map.append({'host': h_hostname,
-                                        'vm': instance.instance['uuid'],
+                                        'vm': instance['instance_uuid'],
                                         'sd': sd})
-        LOG.debug(_(vm_host_map))
         vm_host_map = sorted(vm_host_map, key=lambda x: x['sd']['total_sd'])
+        LOG.debug(_(vm_host_map))
         for vm_host in vm_host_map:
-            instance = filter(lambda x: x.instance['uuid'] == vm_host['vm'],
+            instance = filter(lambda x: x['instance_uuid'] == vm_host['vm'],
                               instances)[0]
             instance_resources = lb_utils.get_instance_resources(instance)
             if instance_resources:
-                instance = {'uuid': instance.instance['uuid'],
-                            'resources': instance_resources}
-                filtered = self.filter_hosts(context, instance, compute_nodes,
+                filter_instance = {'uuid': instance['instance_uuid'],
+                                   'resources': instance_resources}
+                filtered = self.filter_hosts(context, filter_instance,
+                                             compute_nodes,
                                              host=vm_host['host'])
-                LOG.debug(filtered)
+                if not filtered[0]:
+                    continue
+                self.migrate(context, instance['instance_uuid'],
+                             vm_host['host'])
+                return
 
     def balance(self, context, **kwargs):
         return self.min_sd(context, **kwargs)
