@@ -1209,11 +1209,9 @@ class LibvirtConnTestCase(test.TestCase):
                     objects.Flavor, "get_by_id", return_value=flavor),
                 mock.patch.object(conn, '_has_min_version', return_value=True),
                 mock.patch.object(
-                    conn, "_get_host_capabilities", return_value=caps),
-                mock.patch.object(
-                        random, 'choice', side_effect=lambda cells: cells[0])):
+                    conn, "_get_host_capabilities", return_value=caps)):
             cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
-            self.assertEqual(set([0, 1]), cfg.cpuset)
+            self.assertIsNone(cfg.cpuset)
             self.assertIsNone(cfg.cputune)
             self.assertIsNone(cfg.cpu.numa)
 
@@ -1272,15 +1270,12 @@ class LibvirtConnTestCase(test.TestCase):
                 mock.patch.object(
                     conn, "_get_host_capabilities", return_value=caps),
                 mock.patch.object(
-                    hardware, 'get_vcpu_pin_set', return_value=set([2, 3])),
-                mock.patch.object(
-                    random, 'choice', side_effect=lambda cells: cells[0])
+                    hardware, 'get_vcpu_pin_set', return_value=set([2, 3]))
                 ) as (get_by_id_mock, has_min_version_mock, get_host_cap_mock,
-                        get_vcpu_pin_set_mock, choice_mock):
+                        get_vcpu_pin_set_mock):
             cfg = conn._get_guest_config(instance_ref, [], {}, disk_info)
             # NOTE(ndipanov): we make sure that pin_set was taken into account
             # when choosing viable cells
-            choice_mock.assert_called_once_with([set([2, 3])])
             self.assertEqual(set([2, 3]), cfg.cpuset)
             self.assertIsNone(cfg.cputune)
             self.assertIsNone(cfg.cpu.numa)
@@ -6000,7 +5995,9 @@ class LibvirtConnTestCase(test.TestCase):
         conn.plug_vifs(mox.IsA(inst_ref), nw_info)
 
         self.mox.ReplayAll()
-        result = conn.pre_live_migration(c, inst_ref, vol, nw_info, None)
+        result = conn.pre_live_migration(
+            c, inst_ref, vol, nw_info, None,
+            migrate_data={"block_migration": False})
 
         target_res = {'graphics_listen_addrs': {'spice': '127.0.0.1',
                                                 'vnc': '127.0.0.1'}}
@@ -6195,6 +6192,32 @@ class LibvirtConnTestCase(test.TestCase):
                                     migrate_data=migrate_data)
             self.assertTrue(create_image_mock.called)
             self.assertIsInstance(res, dict)
+
+    def test_pre_live_migration_block_migrate_fails(self):
+        bdms = [{
+            'connection_info': {
+                'serial': '12345',
+                u'data': {
+                    'device_path':
+                    u'/dev/disk/by-path/ip-1.2.3.4:3260-iqn.abc.12345.t-lun-X'
+                }
+            },
+            'mount_device': '/dev/sda'}]
+
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        instance = db.instance_create(self.context, self.test_instance)
+
+        with contextlib.nested(
+            mock.patch.object(drvr, '_create_images_and_backing'),
+            mock.patch.object(drvr, 'ensure_filtering_rules_for_instance'),
+            mock.patch.object(drvr, 'plug_vifs'),
+            mock.patch.object(drvr, '_connect_volume'),
+            mock.patch.object(driver, 'block_device_info_get_mapping',
+                              return_value=bdms)):
+            self.assertRaises(exception.MigrationError,
+                              drvr.pre_live_migration,
+                              self.context, instance, block_device_info=None,
+                              network_info=[], disk_info={}, migrate_data={})
 
     def test_get_instance_disk_info_works_correctly(self):
         # Test data
@@ -8983,7 +9006,8 @@ Active:          8381604 kB
         got = conn._get_instance_capabilities()
         self.assertEqual(want, got)
 
-    def test_event_dispatch(self):
+    @mock.patch.object(greenthread, 'spawn_after')
+    def test_event_dispatch(self, mock_spawn_after):
         # Validate that the libvirt self-pipe for forwarding
         # events between threads is working sanely
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
@@ -9020,8 +9044,12 @@ Active:          8381604 kB
         conn._queue_event(event4)
         conn._dispatch_events()
 
-        want_events = [event1, event2, event3, event4]
+        want_events = [event1, event2, event3]
         self.assertEqual(want_events, got_events)
+
+        # STOPPED is delayed so it's handled separately
+        mock_spawn_after.assert_called_once_with(
+            conn._lifecycle_delay, conn.emit_event, event4)
 
     def test_event_lifecycle(self):
         # Validate that libvirt events are correctly translated
@@ -9029,10 +9057,13 @@ Active:          8381604 kB
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
         got_events = []
 
-        def handler(event):
-            got_events.append(event)
+        def spawn_after(seconds, func, *args, **kwargs):
+            got_events.append(args[0])
+            return mock.Mock(spec=greenthread.GreenThread)
 
-        conn.register_event_listener(handler)
+        greenthread.spawn_after = mock.Mock(side_effect=spawn_after)
+
+        conn.register_event_listener(lambda e: None)
         conn._init_events_pipe()
         fake_dom_xml = """
                 <domain type='kvm'>
@@ -9060,22 +9091,18 @@ Active:          8381604 kB
         self.assertEqual(got_events[0].transition,
                          virtevent.EVENT_LIFECYCLE_STOPPED)
 
-    @mock.patch.object(libvirt_driver.LibvirtDriver, 'emit_event')
-    def test_event_emit_delayed_call_now(self, emit_event_mock):
-        self.flags(virt_type="kvm", group="libvirt")
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
-        conn._event_emit_delayed(None)
-        emit_event_mock.assert_called_once_with(None)
-
-    @mock.patch.object(greenthread, 'spawn_after')
-    def test_event_emit_delayed_call_delayed(self, spawn_after_mock):
-        CONF.set_override("virt_type", "xen", group="libvirt")
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+    def test_event_emit_delayed_call_delayed(self):
         event = virtevent.LifecycleEvent(
             "cef19ce0-0ca2-11df-855d-b19fbce37686",
             virtevent.EVENT_LIFECYCLE_STOPPED)
-        conn._event_emit_delayed(event)
-        spawn_after_mock.assert_called_once_with(15, conn.emit_event, event)
+        for virt_type in ("kvm", "xen"):
+            spawn_after_mock = mock.Mock()
+            greenthread.spawn_after = spawn_after_mock
+            CONF.set_override("virt_type", virt_type, group="libvirt")
+            conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+            conn._event_emit_delayed(event)
+            spawn_after_mock.assert_called_once_with(
+                15, conn.emit_event, event)
 
     @mock.patch.object(greenthread, 'spawn_after')
     def test_event_emit_delayed_call_delayed_pending(self, spawn_after_mock):
@@ -9364,12 +9391,17 @@ Active:          8381604 kB
             self.assertEqual(fake_xml, xml)
             raise libvirt.libvirtError('virDomainDefineXML() failed')
 
+        def fake_safe_decode(text, *args, **kwargs):
+            return text + 'safe decoded'
+
         self.log_error_called = False
 
         def fake_error(msg, *args):
             self.log_error_called = True
             self.assertIn(fake_xml, msg % args)
+            self.assertIn('safe decoded', msg % args)
 
+        self.stubs.Set(strutils, 'safe_decode', fake_safe_decode)
         self.stubs.Set(nova.virt.libvirt.driver.LOG, 'error', fake_error)
 
         self.create_fake_libvirt_mock(defineXML=fake_defineXML)
@@ -11884,9 +11916,12 @@ class LibvirtDriverTestCase(test.TestCase):
         def fake_plug_vifs(instance, network_info):
             pass
 
-        def fake_create_domain(xml, instance=None, launch_flags=0,
-                               power_on=True):
+        def fake_create_domain(context, xml, instance, network_info,
+                               block_device_info,
+                               power_on,
+                               vifs_already_plugged=None):
             self.fake_create_domain_called = True
+            self.assertTrue(vifs_already_plugged)
             self.assertEqual(powered_on, power_on)
             return mock.MagicMock()
 
@@ -11909,7 +11944,7 @@ class LibvirtDriverTestCase(test.TestCase):
         self.stubs.Set(utils, 'execute', fake_execute)
         fw = base_firewall.NoopFirewallDriver()
         self.stubs.Set(self.libvirtconnection, 'firewall_driver', fw)
-        self.stubs.Set(self.libvirtconnection, '_create_domain',
+        self.stubs.Set(self.libvirtconnection, '_create_domain_and_network',
                        fake_create_domain)
         self.stubs.Set(self.libvirtconnection, '_enable_hairpin',
                        fake_enable_hairpin)
@@ -11956,7 +11991,7 @@ class LibvirtDriverTestCase(test.TestCase):
         self.stubs.Set(self.libvirtconnection, '_get_guest_xml',
                        lambda *a, **k: None)
         self.stubs.Set(self.libvirtconnection, '_create_domain_and_network',
-                       lambda *a: None)
+                       lambda *a, **k: None)
         self.stubs.Set(loopingcall, 'FixedIntervalLoopingCall',
                        lambda *a, **k: FakeLoopingCall())
 

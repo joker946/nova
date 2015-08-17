@@ -317,6 +317,10 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
             mock_driver.init_host.assert_called_once_with(host='fake-mini')
 
             self.compute.cleanup_host()
+            # register_event_listener is called on startup (init_host) and
+            # in cleanup_host
+            mock_driver.register_event_listener.assert_has_calls([
+                mock.call(self.compute.handle_events), mock.call(None)])
             mock_driver.cleanup_host.assert_called_once_with(host='fake-mini')
 
     def test_init_host_with_deleted_migration(self):
@@ -371,6 +375,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                 power_state=power_state.RUNNING,
                 vm_state=vm_states.ACTIVE,
                 task_state=None,
+                host=self.compute.host,
                 expected_attrs=['info_cache'])
 
         with contextlib.nested(
@@ -394,6 +399,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                 power_state=power_state.RUNNING,
                 vm_state=vm_states.ACTIVE,
                 task_state=None,
+                host=self.compute.host,
                 expected_attrs=['info_cache'])
 
         self.flags(resume_guests_state_on_host_boot=True)
@@ -424,26 +430,76 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
     def test_init_instance_stuck_in_deleting(self):
         instance = fake_instance.fake_instance_obj(
                 self.context,
+                project_id='fake',
                 uuid='fake-uuid',
+                vcpus=1,
+                memory_mb=64,
                 power_state=power_state.RUNNING,
                 vm_state=vm_states.ACTIVE,
+                host=self.compute.host,
                 task_state=task_states.DELETING)
 
         self.mox.StubOutWithMock(objects.BlockDeviceMappingList,
                                  'get_by_instance_uuid')
         self.mox.StubOutWithMock(self.compute, '_delete_instance')
         self.mox.StubOutWithMock(instance, 'obj_load_attr')
+        self.mox.StubOutWithMock(self.compute, '_create_reservations')
 
         bdms = []
+        quotas = objects.quotas.Quotas(self.context)
         instance.obj_load_attr('metadata')
         instance.obj_load_attr('system_metadata')
         objects.BlockDeviceMappingList.get_by_instance_uuid(
                 self.context, instance.uuid).AndReturn(bdms)
+        self.compute._create_reservations(self.context, instance,
+                                          instance.project_id,
+                                          instance.user_id).AndReturn(quotas)
         self.compute._delete_instance(self.context, instance, bdms,
                                       mox.IgnoreArg())
 
         self.mox.ReplayAll()
         self.compute._init_instance(self.context, instance)
+
+    @mock.patch.object(objects.Instance, 'get_by_uuid')
+    @mock.patch.object(objects.BlockDeviceMappingList, 'get_by_instance_uuid')
+    def test_init_instance_stuck_in_deleting_raises_exception(
+            self, mock_get_by_instance_uuid, mock_get_by_uuid):
+
+        instance = fake_instance.fake_instance_obj(
+            self.context,
+            project_id='fake',
+            uuid='fake-uuid',
+            vcpus=1,
+            memory_mb=64,
+            metadata={},
+            system_metadata={},
+            host=self.compute.host,
+            vm_state=vm_states.ACTIVE,
+            task_state=task_states.DELETING,
+            expected_attrs=['metadata', 'system_metadata'])
+
+        bdms = []
+        reservations = ['fake-resv']
+
+        def _create_patch(name, attr):
+            patcher = mock.patch.object(name, attr)
+            mocked_obj = patcher.start()
+            self.addCleanup(patcher.stop)
+            return mocked_obj
+
+        mock_delete_instance = _create_patch(self.compute, '_delete_instance')
+        mock_set_instance_error_state = _create_patch(
+            self.compute, '_set_instance_error_state')
+        mock_create_reservations = _create_patch(self.compute,
+                                                 '_create_reservations')
+
+        mock_create_reservations.return_value = reservations
+        mock_get_by_instance_uuid.return_value = bdms
+        mock_get_by_uuid.return_value = instance
+        mock_delete_instance.side_effect = test.TestingException('test')
+        self.compute._init_instance(self.context, instance)
+        mock_set_instance_error_state.assert_called_once_with(
+            self.context, instance)
 
     def _test_init_instance_reverts_crashed_migrations(self,
                                                        old_vm_state=None):
@@ -459,6 +515,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                 task_state=task_states.RESIZE_MIGRATING,
                 power_state=power_state.SHUTDOWN,
                 system_metadata=sys_meta,
+                host=self.compute.host,
                 expected_attrs=['system_metadata'])
 
         self.mox.StubOutWithMock(compute_utils, 'get_nw_info_for_instance')
@@ -507,6 +564,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                 self.context,
                 uuid='foo',
                 vm_state=vm_states.ACTIVE,
+                host=self.compute.host,
                 task_state=task_states.MIGRATING)
         with contextlib.nested(
             mock.patch.object(instance, 'save'),
@@ -525,6 +583,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                 self.context,
                 uuid='foo',
                 vm_state=vm_state,
+                host=self.compute.host,
                 task_state=task_state)
         with mock.patch.object(instance, 'save') as save:
             self.compute._init_instance(self.context, instance)
@@ -547,6 +606,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                     vm_state, task_state)
 
     def _test_init_instance_sets_building_tasks_error(self, instance):
+        instance.host = self.compute.host
         with mock.patch.object(instance, 'save') as save:
             self.compute._init_instance(self.context, instance)
             save.assert_called_once_with()
@@ -588,6 +648,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
             self.compute.driver.post_interrupted_snapshot_cleanup = mock.Mock()
             instance.info_cache = None
             instance.power_state = power_state.RUNNING
+            instance.host = self.compute.host
             self.compute._init_instance(self.context, instance)
             save.assert_called_once_with()
             self.compute.driver.post_interrupted_snapshot_cleanup.\
@@ -627,6 +688,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         instance.uuid = 'foo'
         instance.vm_state = vm_states.ERROR
         instance.task_state = task_states.IMAGE_UPLOADING
+        instance.host = self.compute.host
         self.mox.StubOutWithMock(compute_utils, 'get_nw_info_for_instance')
         self.mox.ReplayAll()
         self.compute._init_instance(self.context, instance)
@@ -635,19 +697,32 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
     def test_init_instance_deletes_error_deleting_instance(self):
         instance = fake_instance.fake_instance_obj(
                 self.context,
-                uuid='fake',
+                project_id='fake',
+                uuid='fake-uuid',
+                vcpus=1,
+                memory_mb=64,
                 vm_state=vm_states.ERROR,
+                host=self.compute.host,
                 task_state=task_states.DELETING)
+
         self.mox.StubOutWithMock(objects.BlockDeviceMappingList,
                                  'get_by_instance_uuid')
         self.mox.StubOutWithMock(self.compute, '_delete_instance')
         self.mox.StubOutWithMock(instance, 'obj_load_attr')
+        self.mox.StubOutWithMock(objects.quotas, 'ids_from_instance')
+        self.mox.StubOutWithMock(self.compute, '_create_reservations')
 
         bdms = []
+        quotas = objects.quotas.Quotas(self.context)
         instance.obj_load_attr('metadata')
         instance.obj_load_attr('system_metadata')
         objects.BlockDeviceMappingList.get_by_instance_uuid(
                 self.context, instance.uuid).AndReturn(bdms)
+        objects.quotas.ids_from_instance(self.context, instance).AndReturn(
+            (instance.project_id, instance.user_id))
+        self.compute._create_reservations(self.context, instance,
+                                          instance.project_id,
+                                          instance.user_id).AndReturn(quotas)
         self.compute._delete_instance(self.context, instance, bdms,
                                       mox.IgnoreArg())
         self.mox.ReplayAll()
@@ -677,6 +752,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
 
     def _test_init_instance_retries_reboot(self, instance, reboot_type,
                                            return_power_state):
+        instance.host = self.compute.host
         with contextlib.nested(
             mock.patch.object(self.compute, '_get_power_state',
                                return_value=return_power_state),
@@ -731,6 +807,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                                                 power_state.NOSTATE)
 
     def _test_init_instance_cleans_reboot_state(self, instance):
+        instance.host = self.compute.host
         with contextlib.nested(
             mock.patch.object(self.compute, '_get_power_state',
                                return_value=power_state.RUNNING),
@@ -768,6 +845,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         instance.id = 1
         instance.vm_state = vm_states.ACTIVE
         instance.task_state = task_states.POWERING_OFF
+        instance.host = self.compute.host
         with mock.patch.object(self.compute, 'stop_instance'):
             self.compute._init_instance(self.context, instance)
             call = mock.call(self.context, instance)
@@ -779,6 +857,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         instance.id = 1
         instance.vm_state = vm_states.ACTIVE
         instance.task_state = task_states.POWERING_ON
+        instance.host = self.compute.host
         with mock.patch.object(self.compute, 'start_instance'):
             self.compute._init_instance(self.context, instance)
             call = mock.call(self.context, instance)
@@ -790,6 +869,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         instance.id = 1
         instance.vm_state = vm_states.ACTIVE
         instance.task_state = task_states.POWERING_ON
+        instance.host = self.compute.host
         with mock.patch.object(self.compute, 'start_instance',
                               return_value=Exception):
             init_return = self.compute._init_instance(self.context, instance)
@@ -803,6 +883,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         instance.id = 1
         instance.vm_state = vm_states.ACTIVE
         instance.task_state = task_states.POWERING_OFF
+        instance.host = self.compute.host
         with mock.patch.object(self.compute, 'stop_instance',
                               return_value=Exception):
             init_return = self.compute._init_instance(self.context, instance)
@@ -1821,6 +1902,29 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
     def test_init_host_with_partial_migration_resized(self):
         self._test_init_host_with_partial_migration(
             vm_state=vm_states.RESIZED)
+
+    @mock.patch('nova.compute.manager.ComputeManager._get_instances_on_driver')
+    def test_evacuate_disabled(self, mock_giod):
+        self.flags(destroy_after_evacuate=False, group='workarounds')
+        inst = mock.MagicMock()
+        inst.uuid = 'foo'
+        inst.host = self.compute.host + '-alt'
+        mock_giod.return_value = [inst]
+        with mock.patch.object(self.compute.driver, 'destroy') as mock_d:
+            self.compute._destroy_evacuated_instances(mock.MagicMock())
+            self.assertFalse(mock_d.called)
+
+    @mock.patch('nova.compute.manager.ComputeManager.'
+                '_destroy_evacuated_instances')
+    @mock.patch('nova.compute.manager.LOG')
+    def test_init_host_foreign_instance(self, mock_log, mock_destroy):
+        inst = mock.MagicMock()
+        inst.host = self.compute.host + '-alt'
+        self.compute._init_instance(mock.sentinel.context, inst)
+        self.assertFalse(inst.save.called)
+        self.assertTrue(mock_log.warning.called)
+        msg = mock_log.warning.call_args_list[0]
+        self.assertIn('appears to not be owned by this host', msg[0][0])
 
     @mock.patch('nova.compute.manager.ComputeManager._instance_update')
     def test_error_out_instance_on_exception_not_implemented_err(self,

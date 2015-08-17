@@ -241,6 +241,8 @@ CONF.import_opt('enabled', 'nova.rdp', group='rdp')
 CONF.import_opt('html5_proxy_base_url', 'nova.rdp', group='rdp')
 CONF.import_opt('enabled', 'nova.console.serial', group='serial_console')
 CONF.import_opt('base_url', 'nova.console.serial', group='serial_console')
+CONF.import_opt('destroy_after_evacuate', 'nova.utils', group='workarounds')
+
 
 LOG = logging.getLogger(__name__)
 
@@ -760,6 +762,17 @@ class ComputeManager(manager.Manager):
                                'vm_state': instance.vm_state},
                               instance=instance)
                     continue
+                if not CONF.workarounds.destroy_after_evacuate:
+                    LOG.warning(_LW('Instance %(uuid)s appears to have been '
+                                    'evacuated from this host to %(host)s. '
+                                    'Not destroying it locally due to '
+                                    'config setting '
+                                    '"workarounds.destroy_after_evacuate". '
+                                    'If this is not correct, enable that '
+                                    'option and restart nova-compute.'),
+                                {'uuid': instance.uuid,
+                                 'host': instance.host})
+                    continue
                 LOG.info(_('Deleting instance as its host ('
                            '%(instance_host)s) is not equal to our '
                            'host (%(our_host)s).'),
@@ -847,8 +860,34 @@ class ComputeManager(manager.Manager):
                 self.consoleauth_rpcapi.delete_tokens_for_instance(context,
                         instance.uuid)
 
+    def _create_reservations(self, context, instance, project_id, user_id):
+        vcpus = instance.vcpus
+        mem_mb = instance.memory_mb
+
+        quotas = objects.Quotas(context=context)
+        quotas.reserve(project_id=project_id,
+                       user_id=user_id,
+                       instances=-1,
+                       cores=-vcpus,
+                       ram=-mem_mb)
+        return quotas
+
     def _init_instance(self, context, instance):
         '''Initialize this instance during service init.'''
+
+        # NOTE(danms): If the instance appears to not be owned by this
+        # host, it may have been evacuated away, but skipped by the
+        # evacuation cleanup code due to configuration. Thus, if that
+        # is a possibility, don't touch the instance in any way, but
+        # log the concern. This will help avoid potential issues on
+        # startup due to misconfiguration.
+        if instance.host != self.host:
+            LOG.warning(_LW('Instance %(uuid)s appears to not be owned '
+                            'by this host, but by %(host)s. Startup '
+                            'processing is being skipped.'),
+                        {'uuid': instance.uuid,
+                         'host': instance.host})
+            return
 
         # Instances that are shut down, or in an error state can not be
         # initialized and are not attempted to be recovered. The exception
@@ -926,14 +965,11 @@ class ComputeManager(manager.Manager):
                 instance.obj_load_attr('system_metadata')
                 bdms = objects.BlockDeviceMappingList.get_by_instance_uuid(
                         context, instance.uuid)
-                # FIXME(comstud): This needs fixed. We should be creating
-                # reservations and updating quotas, because quotas
-                # wouldn't have been updated for this instance since it is
-                # still in DELETING.  See bug 1296414.
-                #
-                # Create a dummy quota object for now.
-                quotas = objects.Quotas.from_reservations(
-                        context, None, instance=instance)
+                project_id, user_id = objects.quotas.ids_from_instance(
+                    context, instance)
+                quotas = self._create_reservations(context, instance,
+                                                   project_id, user_id)
+
                 self._delete_instance(context, instance, bdms, quotas)
             except Exception:
                 # we don't want that an exception blocks the init_host
@@ -1165,6 +1201,7 @@ class ComputeManager(manager.Manager):
                 self.driver.filter_defer_apply_off()
 
     def cleanup_host(self):
+        self.driver.register_event_listener(None)
         self.driver.cleanup_host(host=self.host)
 
     def pre_start_hook(self):
@@ -1975,7 +2012,10 @@ class ComputeManager(manager.Manager):
         # Get swap out of the list
         swap = driver_block_device.get_swap(swap)
 
+        root_device_name = instance.get('root_device_name')
+
         return {'swap': swap,
+                'root_device_name': root_device_name,
                 'ephemerals': ephemerals,
                 'block_device_mapping': block_device_mapping}
 
@@ -4988,7 +5028,10 @@ class ComputeManager(manager.Manager):
         migrate_data = dict(migrate_data or {})
         try:
             if block_migration:
-                disk = self.driver.get_instance_disk_info(instance.name)
+                block_device_info = self._get_instance_block_device_info(
+                    context, instance)
+                disk = self.driver.get_instance_disk_info(
+                    instance.name, block_device_info=block_device_info)
             else:
                 disk = None
 
