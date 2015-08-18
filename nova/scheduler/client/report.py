@@ -44,6 +44,7 @@ class SchedulerReportClient(object):
             del updates['id']
         else:
             raise exception.ComputeHostNotCreated(name=str(name))
+
         self.conductor_api.compute_node_update(context,
                                                {'id': compute_node_id},
                                                updates)
