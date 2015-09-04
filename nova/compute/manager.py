@@ -5253,6 +5253,17 @@ class ComputeManager(manager.Manager):
             instance.node = node_name
             instance.save(expected_task_state=task_states.MIGRATING)
 
+        try:
+            migration_obj = objects.Migration.get_by_instance_and_status(
+              context,
+              instance.uuid,
+              'in progress')
+            if migration_obj:
+                migration_obj.status = 'confirmed'
+                migration_obj.save()
+        except Exception:
+            pass
+
         # NOTE(vish): this is necessary to update dhcp
         self.network_api.setup_networks_on_host(context, instance, self.host)
         self._notify_about_instance_usage(

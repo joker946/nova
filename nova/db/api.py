@@ -241,12 +241,17 @@ def compute_node_stats_upsert(context, values):
     return IMPL.compute_node_stats_upsert(context, values)
 
 
-def get_compute_node_stats(context):
-    return IMPL.get_compute_node_stats(context)
+def get_compute_node_stats(context, use_mean=False, read_suspended=False):
+    return IMPL.get_compute_node_stats(context, use_mean=use_mean,
+                                       read_suspended=read_suspended)
 
 
 def get_instances_stat(context, host):
     return IMPL.get_instances_stat(context, host)
+
+
+def clear_compute_stats(context, date):
+    return IMPL.clear_compute_stats(context, date)
 
 
 def compute_node_delete(context, compute_id):

@@ -660,15 +660,9 @@ def compute_node_stats_upsert(context, values):
     compute_node = values['node']
     instances = values['instances']
     with session.begin():
-        compute_stats = model_query(context, models.ComputeNodeStats,
-                                    session=session).filter_by(
-            compute_id=compute_node['compute_id']).first()
-        if compute_stats:
-            compute_stats.update(compute_node)
-        else:
-            compute_stats = models.ComputeNodeStats()
-            compute_stats.update(compute_node)
-            compute_stats.save(session=session)
+        compute_stats = models.ComputeNodeStats()
+        compute_stats.update(compute_node)
+        compute_stats.save(session=session)
         for x in instances:
             instance = model_query(context, models.InstanceStats,
                                    session=session)\
@@ -688,19 +682,73 @@ def compute_node_stats_upsert(context, values):
 
 
 @require_admin_context
-def get_compute_node_stats(context):
-    return model_query(context, models.ComputeNodeStats).\
-        join(models.ComputeNode).filter(models.ComputeNode.deleted == 0)\
-        .options(joinedload('compute_node')).all()
+def get_compute_node_stats(context, use_mean=False, read_suspended=False):
+    session = get_session()
+    res = None
+    if use_mean:
+        res = session.query(
+            models.ComputeNodeStats.compute_id,
+            func.avg(models.ComputeNodeStats.memory_used),
+            models.ComputeNodeStats.memory_total,
+            func.avg(models.ComputeNodeStats.cpu_used_percent),
+            models.ComputeNode.hypervisor_hostname,
+            models.ComputeNode.vcpus,
+            )\
+            .join(models.ComputeNode,
+                  models.ComputeNodeStats.compute_id == models.ComputeNode.id)\
+            .filter(models.ComputeNode.deleted == 0)
+    else:
+        sub = session.query(func.max(models.ComputeNodeStats.created_at).label(
+            "cat"), models.ComputeNodeStats.compute_id)\
+            .group_by(models.ComputeNodeStats.compute_id).subquery()
+        _and = and_(sub.c.cat == models.ComputeNodeStats.created_at,
+                    sub.c.compute_id == models.ComputeNodeStats.compute_id)
+        res = session.query(models.ComputeNodeStats.compute_id,
+                            models.ComputeNodeStats.memory_used,
+                            models.ComputeNodeStats.memory_total,
+                            models.ComputeNodeStats.cpu_used_percent,
+                            models.ComputeNode.hypervisor_hostname,
+                            models.ComputeNode.vcpus)\
+            .join((sub, _and))\
+            .join(models.ComputeNode,
+                  models.ComputeNodeStats.compute_id == models.ComputeNode.id)\
+            .filter(models.ComputeNode.deleted == 0)
+    if not read_suspended:
+        res = res.filter(models.ComputeNode.suspend_state == "not suspended")
+    if read_suspended:
+        pass
+    if read_suspended == "only":
+        res = res.filter(models.ComputeNode.suspend_state == "suspend")
+    if use_mean:
+        res = res.group_by(models.ComputeNodeStats.compute_id,
+                           models.ComputeNodeStats.memory_total,
+                           models.ComputeNode.hypervisor_hostname,
+                           models.ComputeNode.vcpus)
+    res = res.all()
+    fields = ('compute_id', 'memory_used', 'memory_total',
+              'cpu_used_percent', 'hypervisor_hostname', 'vcpus')
+    compute_nodes = []
+    for x in res:
+        compute_nodes.append(dict((field, x[idx])
+                             for idx, field in enumerate(fields)))
+    return compute_nodes
 
 
 @require_admin_context
 def get_instances_stat(context, host):
-    return model_query(context, models.InstanceStats).\
+    return model_query(context, models.InstanceStats, read_deleted="no").\
         join(models.Instance,
              models.InstanceStats.instance_uuid == models.Instance.uuid)\
         .filter(models.Instance.host == host).options(joinedload('instance'))\
         .all()
+
+
+@require_admin_context
+def clear_compute_stats(context, date):
+    session = get_session()
+    with session.begin():
+        session.query(models.ComputeNodeStats).filter(
+            models.ComputeNodeStats.created_at < date).delete()
 
 
 @require_admin_context
@@ -1754,6 +1802,9 @@ def instance_destroy(context, instance_uuid, constraint=None):
                 filter_by(instance_uuid=instance_uuid).\
                 soft_delete()
         model_query(context, models.InstanceExtra, session=session).\
+                filter_by(instance_uuid=instance_uuid).\
+                soft_delete()
+        model_query(context, models.InstanceStats, session=session).\
                 filter_by(instance_uuid=instance_uuid).\
                 soft_delete()
     return instance_ref

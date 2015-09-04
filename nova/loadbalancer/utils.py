@@ -108,7 +108,7 @@ def build_filter_properties(context, chosen_instance, nodes):
         dict_node = {'memory_total': n['memory_total'],
                      'memory_used': n['memory_used'],
                      'cpu_used_percent': n['cpu_used_percent'],
-                     'host': n.compute_node.hypervisor_hostname}
+                     'host': n['hypervisor_hostname']}
         dict_nodes.append(dict_node)
     filter_properties.update({'instance_type': instance_type,
                               'request_spec': req_spec,
@@ -125,12 +125,12 @@ def normalize_params(params, k='uuid'):
     for param in params:
         for key in param:
             if key != k:
-                if max_values.get(key):
+                if key in max_values:
                     if max_values[key] < param[key]:
                         max_values[key] = param[key]
                 else:
                     max_values[key] = param[key]
-                if min_values.get(key):
+                if key in min_values:
                     if min_values[key] > param[key]:
                         min_values[key] = param[key]
                 else:
@@ -142,7 +142,7 @@ def normalize_params(params, k='uuid'):
         norm_ins = {}
         for key in param:
             if key != k:
-                if len(params) == 1 or max_values[key] == min_values[key]:
+                if len(params) == 1 or (max_values[key] == min_values[key]):
                     delta_key = 1
                 else:
                     delta_key = max_values[key] - min_values[key]
@@ -165,19 +165,19 @@ def fill_compute_stats(instances, compute_nodes):
                 host_loads[instance.instance['host']]['mem'] = instance['mem']
                 host_loads[instance.instance['host']]['cpu'] = cpu_util
     for node in compute_nodes:
-        if node.compute_node.hypervisor_hostname not in host_loads:
-            host_loads[node.compute_node.hypervisor_hostname] = {}
-            host_loads[node.compute_node.hypervisor_hostname]['mem'] = 0
-            host_loads[node.compute_node.hypervisor_hostname]['cpu'] = 0
+        if node['hypervisor_hostname'] not in host_loads:
+            host_loads[node['hypervisor_hostname']] = {}
+            host_loads[node['hypervisor_hostname']]['mem'] = 0
+            host_loads[node['hypervisor_hostname']]['cpu'] = 0
     return host_loads
 
 
 def calculate_host_loads(compute_nodes, compute_stats):
     host_loads = compute_stats
     for node in compute_nodes:
-        host_loads[node.compute_node.hypervisor_hostname]['mem'] \
-            /= float(node.compute_node.memory_mb)
-        host_loads[node.compute_node.hypervisor_hostname]['cpu'] \
+        host_loads[node['hypervisor_hostname']]['mem'] \
+            /= float(node['memory_total'])
+        host_loads[node['hypervisor_hostname']]['cpu'] \
             /= 100.00
     return host_loads
 
@@ -200,13 +200,17 @@ def calculate_cpu(instance, compute_nodes=None):
         instance['prev_cpu_time'] = 0
     if instance['prev_cpu_time'] > instance['cpu_time']:
         instance['prev_cpu_time'] = 0
+    if not instance['updated_at']:
+        return 0
+    if not instance['prev_updated_at']:
+        instance['prev_updated_at'] = instance['created_at']
     delta_cpu_time = instance['cpu_time'] - instance['prev_cpu_time']
     delta_time = (instance['updated_at'] - instance['prev_updated_at'])\
         .seconds
     if compute_nodes:
         num_cpu = filter(
-            lambda x: x.compute_node.hypervisor_hostname == instance_host,
-            compute_nodes)[0].compute_node.vcpus
+            lambda x: x['hypervisor_hostname'] == instance_host,
+            compute_nodes)[0]['vcpus']
     else:
         num_cpu = instance.instance['vcpus']
     if delta_time:

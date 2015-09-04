@@ -31,6 +31,7 @@ import functools
 import glob
 import mmap
 import os
+import random
 import shutil
 import socket
 import sys
@@ -438,11 +439,14 @@ class LibvirtDriver(driver.ComputeDriver):
         self._volume_api = volume.API()
         self._image_api = image.API()
         self._events_delayed = {}
-        # Note(toabctl): During a reboot of a domain, STOPPED and
+        # Note(toabctl): During a reboot of a Xen domain, STOPPED and
         #                STARTED events are sent. To prevent shutting
         #                down the domain during a reboot, delay the
         #                STOPPED lifecycle event some seconds.
-        self._lifecycle_delay = 15
+        if CONF.libvirt.virt_type == "xen":
+            self._lifecycle_delay = 15
+        else:
+            self._lifecycle_delay = 0
 
         sysinfo_serial_funcs = {
             'none': lambda: None,
@@ -654,7 +658,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
             if event.transition == virtevent.EVENT_LIFECYCLE_STOPPED:
                 # Delay STOPPED event, as they may be followed by a STARTED
-                # event in case the instance is rebooting
+                # event in case the instance is rebooting, when runned with Xen
                 id_ = greenthread.spawn_after(self._lifecycle_delay,
                                               self.emit_event, event)
                 self._events_delayed[event.uuid] = id_
@@ -3785,12 +3789,29 @@ class LibvirtDriver(driver.ComputeDriver):
                 context, instance)
 
         if not guest_cpu_numa:
-            # No NUMA topology defined for instance - let the host kernel deal
-            # with the NUMA effects.
-            # TODO(ndipanov): Attempt to spread the instance
-            # across NUMA nodes and expose the topology to the
-            # instance as an optimisation
-            return allowed_cpus, None, None
+            # No NUMA topology defined for instance
+            vcpus = flavor.vcpus
+            memory = flavor.memory_mb
+            if topology:
+                # Host is NUMA capable so try to keep the instance in a cell
+                viable_cells_cpus = []
+                for cell in topology.cells:
+                    if vcpus <= len(cell.cpuset) and memory <= cell.memory:
+                        viable_cells_cpus.append(cell.cpuset)
+
+                if not viable_cells_cpus:
+                    # We can't contain the instance in a cell - do nothing for
+                    # now.
+                    # TODO(ndipanov): Attempt to spread the instance accross
+                    # NUMA nodes and expose the topology to the instance as an
+                    # optimisation
+                    return allowed_cpus, None, None
+                else:
+                    pin_cpuset = random.choice(viable_cells_cpus)
+                    return pin_cpuset, None, None
+            else:
+                # We have no NUMA topology in the host either
+                return allowed_cpus, None, None
         else:
             if topology:
                 # Now get the CpuTune configuration from the numa_topology
@@ -4452,8 +4473,7 @@ class LibvirtDriver(driver.ComputeDriver):
         err = None
         try:
             if xml:
-                err = (_LE('Error defining a domain with XML: %s') %
-                       strutils.safe_decode(xml, errors='ignore'))
+                err = _LE('Error defining a domain with XML: %s') % xml
                 domain = self._conn.defineXML(xml)
 
             if power_on:
@@ -5659,18 +5679,6 @@ class LibvirtDriver(driver.ComputeDriver):
                 CONF.libvirt.virt_type, vol)
             self._connect_volume(connection_info, disk_info)
 
-        if is_block_migration and len(block_device_mapping):
-            # NOTE(stpierre): if this instance has mapped volumes,
-            # we can't do a block migration, since that will
-            # result in volumes being copied from themselves to
-            # themselves, which is a recipe for disaster.
-            LOG.error(
-                _LE('Cannot block migrate instance %s with mapped volumes') %
-                instance.uuid)
-            raise exception.MigrationError(
-                _('Cannot block migrate instance %s with mapped volumes') %
-                instance.uuid)
-
         # We call plug_vifs before the compute manager calls
         # ensure_filtering_rules_for_instance, to ensure bridge is set up
         # Retry operation is necessary because continuously request comes,
@@ -6228,8 +6236,7 @@ class LibvirtDriver(driver.ComputeDriver):
         xml = self._get_guest_xml(context, instance, network_info, disk_info,
                                   block_device_info=block_device_info)
         self._create_domain_and_network(context, xml, instance, network_info,
-                                        block_device_info, power_on,
-                                        vifs_already_plugged=True)
+                                        block_device_info, power_on)
 
         if power_on:
             timer = loopingcall.FixedIntervalLoopingCall(

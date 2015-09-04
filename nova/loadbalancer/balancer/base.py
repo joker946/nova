@@ -16,6 +16,7 @@
 from oslo.config import cfg
 
 from nova.compute import api as compute_api
+from nova import objects
 from nova.loadbalancer import utils as lb_utils
 from nova.openstack.common import importutils
 from nova.scheduler import filters
@@ -31,6 +32,7 @@ lb_opts = [
                     'ImagePropertiesFilter',
                     'ServerGroupAntiAffinityFilter',
                     'ServerGroupAffinityFilter',
+                    'SuspendFilter'
                 ],
                 help='Which filter class names to use for filtering hosts '
                 'when not specified in the request.')
@@ -72,3 +74,8 @@ class BaseBalancer(object):
                                                 instance_uuid)
         self.compute_api.live_migrate(lb_utils.get_context(), instance,
                                       False, False, hostname)
+        migr = objects.Migration(context, source_node=instance.node,
+                                 dest_node=hostname,
+                                 instance_uuid=instance_uuid,
+                                 status='in progress')
+        migr.create(context)

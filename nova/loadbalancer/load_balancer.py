@@ -13,11 +13,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import datetime
+
 from oslo.config import cfg
+from nova import db
 from nova import manager
 from nova.openstack.common import log as logging
 from nova.openstack.common import periodic_task
 from stevedore import driver
+from statistics import make_stats
 
 
 lb_opts = [
@@ -26,12 +30,25 @@ lb_opts = [
                help='Threshold class'),
     cfg.StrOpt('balancer_class',
                default='classic',
-               help='Balancer class')
+               help='Balancer class'),
+    cfg.StrOpt('underload_class',
+               default='mean_underload',
+               help='Underload class')
+]
+
+clear_opts = [
+    cfg.IntOpt('utc_offset',
+               default=10800,
+               help='UTC offset in seconds'),
+    cfg.IntOpt('ttl',
+               default=300,
+               help='Time To Live in seconds')
 ]
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 CONF.register_opts(lb_opts, 'loadbalancer')
+CONF.register_opts(clear_opts, 'loadbalancer_clear_stats')
 CONF.import_opt('scheduler_host_manager', 'nova.scheduler.driver')
 
 
@@ -44,6 +61,11 @@ SUPPORTED_THRESHOLD_CLASSES = [
 SUPPORTED_BALANCER_CLASSES = [
     'classic',
     'minimizeSD'
+]
+
+
+SUPPORTED_UNDERLOAD_CLASSES = [
+    'mean_underload'
 ]
 
 
@@ -63,6 +85,14 @@ def get_threshold_class(class_name):
     raise Exception('Setted up class is not supported.')
 
 
+def get_underload_class(class_name):
+    if class_name in SUPPORTED_UNDERLOAD_CLASSES:
+        namespace = 'nova.loadbalancer.underload'
+        mgr = driver.DriverManager(namespace, class_name)
+        return mgr.driver()
+    raise Exception('Setted up class is not supported.')
+
+
 class LoadBalancer(manager.Manager):
     def __init__(self, *args, **kwargs):
         super(LoadBalancer, self).__init__(service_name='loadbalancer',
@@ -71,8 +101,23 @@ class LoadBalancer(manager.Manager):
             CONF.loadbalancer.threshold_class)
         self.balancer_class = get_balancer_class(
             CONF.loadbalancer.balancer_class)
+        self.underload_class = get_underload_class(
+            CONF.loadbalancer.underload_class)
+
+    def _clear_compute_stats(self, context):
+        utc_offset = CONF.loadbalancer_clear_stats.utc_offset
+        ttl = CONF.loadbalancer_clear_stats.ttl
+        overall_time = utc_offset + ttl
+        delta_time = datetime.datetime.now() - datetime.timedelta(
+            seconds=overall_time)
+        db.clear_compute_stats(context, delta_time)
+        LOG.debug("Compute stats cleared")
 
     def _balancer(self, context):
+        make_stats()
+        underload = self.underload_class.indicate(context)
+        if underload:
+            return
         node, nodes, extra_info = self.threshold_class.indicate(context)
         if node:
             return self.balancer_class.balance(context,
@@ -83,3 +128,7 @@ class LoadBalancer(manager.Manager):
     @periodic_task.periodic_task
     def indicate_threshold(self, context):
         return self._balancer(context)
+
+    @periodic_task.periodic_task
+    def clear_compute_stats(self, context):
+        return self._clear_compute_stats(context)
