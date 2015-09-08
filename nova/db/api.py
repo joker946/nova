@@ -254,6 +254,14 @@ def clear_compute_stats(context, date):
     return IMPL.clear_compute_stats(context, date)
 
 
+def make_host_suspended(context, hostname):
+    return IMPL.make_host_suspended(context, hostname)
+
+
+def get_mac_address_to_wake(context, hostname):
+    return IMPL.get_mac_address_to_wake(context, hostname)
+
+
 def compute_node_delete(context, compute_id):
     """Delete a compute node from the database.
 

@@ -132,3 +132,7 @@ class LoadBalancer(manager.Manager):
     @periodic_task.periodic_task
     def clear_compute_stats(self, context):
         return self._clear_compute_stats(context)
+
+    @periodic_task.periodic_task
+    def check_is_all_vms_migrated(self, context):
+        return self.underload_class.check_is_all_vms_migrated(context)

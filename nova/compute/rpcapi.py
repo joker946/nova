@@ -941,6 +941,11 @@ class ComputeAPI(object):
                 block_device_mapping=block_device_mapping, node=node,
                 limits=limits)
 
+    def suspend_host(self, ctxt, hostname, eth_device):
+        version = '3.0'
+        cctxt = self.client.prepare(server=hostname, version=version)
+        cctxt.cast(ctxt, 'suspend_host', device=eth_device)
+
 
 class SecurityGroupAPI(object):
     '''Client side of the security group rpc API.

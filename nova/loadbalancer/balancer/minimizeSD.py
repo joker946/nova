@@ -63,6 +63,40 @@ class MinimizeSD(BaseBalancer):
                 'ram_sd': ram_sd*self.memory_weight,
                 'total_sd': cpu_sd*self.cpu_weight + ram_sd*self.memory_weight}
 
+    def migrate_all_vms_from_host(self, context, host):
+        compute_nodes = db.get_compute_node_stats(context, read_suspended=True)
+        instances = db.get_instances_stat(context, host)
+        host_loads = lb_utils.fill_compute_stats(instances, compute_nodes)
+        vm_host_map = []
+        for instance in instances:
+            for node in compute_nodes:
+                h_hostname = node['hypervisor_hostname']
+                # Source host shouldn't be use.
+                if instance.instance['host'] != h_hostname:
+                    sd = self._simulate_migration(instance, node, host_loads,
+                                                  compute_nodes)
+                    vm_host_map.append({'host': h_hostname,
+                                        'vm': instance['instance_uuid'],
+                                        'sd': sd})
+        vm_host_map = sorted(vm_host_map, key=lambda x: x['sd']['total_sd'])
+        for instance in instances:
+            vm_hosts = list(
+                filter(lambda x: x['vm'] == instance['instance_uuid'],
+                       vm_host_map))
+            instance_resources = lb_utils.get_instance_resources(instance)
+            filter_instance = {'uuid': instance['instance_uuid'],
+                               'resources': instance_resources}
+            if instance_resources:
+                for vms in vm_hosts:
+                    filtered = self.filter_hosts(context, filter_instance,
+                                                 compute_nodes,
+                                                 host=vms['host'])
+                    if not filtered[0]:
+                        continue
+                    self.migrate(context, instance['instance_uuid'],
+                                 vms['host'])
+                    break
+
     def min_sd(self, context, **kwargs):
         compute_nodes = kwargs.get('nodes')
         instances = []

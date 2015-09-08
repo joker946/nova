@@ -14,9 +14,13 @@
 #    under the License.
 
 from nova import db
+from nova import objects
+from nova import utils as nova_utils
 from nova.loadbalancer.underload.base import Base
+from nova.loadbalancer.balancer.minimizeSD import MinimizeSD
 from nova.loadbalancer import utils
 from nova.openstack.common import log as logging
+from nova.compute import rpcapi as compute_api
 
 from oslo.config import cfg
 
@@ -37,7 +41,7 @@ CONF.register_opts(lb_opts, 'loadbalancer_mean_underload')
 
 class MeanUnderload(Base):
     def __init__(self):
-        pass
+        self.compute_rpc = compute_api.ComputeAPI()
 
     def indicate(self, context):
         cpu_max = CONF.loadbalancer_mean_underload.threshold_cpu
@@ -56,4 +60,32 @@ class MeanUnderload(Base):
             if (cpu < cpu_max) and (memory < memory_max):
                 # Underload is needed.
                 LOG.debug('underload is needed')
+                db.make_host_suspended(context, node)
+                minim = MinimizeSD()
+                minim.migrate_all_vms_from_host(context, node)
                 return True
+
+    def check_is_all_vms_migrated(self, context):
+        suspended_nodes = db.get_compute_node_stats(context,
+                                                    read_suspended='only')
+        for node in suspended_nodes:
+            active_migrations = objects.migration.MigrationList\
+                .get_in_progress_by_host_and_node(context,
+                                                  node['hypervisor_hostname'],
+                                                  node['hypervisor_hostname'])
+            if active_migrations:
+                LOG.debug('There is some migrations is active state')
+                return
+            else:
+                mac = db.get_mac_address_to_wake(context,
+                                                 node['hypervisor_hostname'])
+                if mac:
+                    continue
+                out, err = nova_utils.execute('arp', '-a', node['host_ip'])
+                mac = out.split()[3]
+                eth_device = out.split()[6]
+                self.compute_rpc.suspend_host(context,
+                                              node['hypervisor_hostname'],
+                                              eth_device)
+                db.compute_node_update(context, node['compute_id'],
+                                       {'mac_to_wake': mac})

@@ -19,6 +19,6 @@ from nova.scheduler import filters
 
 class SuspendFilter(filters.BaseHostFilter):
     def host_passes(self, host_state, filter_properties):
-        if host_state.suspend_state == "suspend":
+        if host_state.suspend_state == "suspended":
             return False
         return True

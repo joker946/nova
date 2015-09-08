@@ -692,7 +692,7 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
             models.ComputeNodeStats.memory_total,
             func.avg(models.ComputeNodeStats.cpu_used_percent),
             models.ComputeNode.hypervisor_hostname,
-            models.ComputeNode.vcpus,
+            models.ComputeNode.vcpus
             )\
             .join(models.ComputeNode,
                   models.ComputeNodeStats.compute_id == models.ComputeNode.id)\
@@ -708,7 +708,8 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
                             models.ComputeNodeStats.memory_total,
                             models.ComputeNodeStats.cpu_used_percent,
                             models.ComputeNode.hypervisor_hostname,
-                            models.ComputeNode.vcpus)\
+                            models.ComputeNode.vcpus,
+                            models.ComputeNode.host_ip)\
             .join((sub, _and))\
             .join(models.ComputeNode,
                   models.ComputeNodeStats.compute_id == models.ComputeNode.id)\
@@ -718,7 +719,7 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
     if read_suspended:
         pass
     if read_suspended == "only":
-        res = res.filter(models.ComputeNode.suspend_state == "suspend")
+        res = res.filter(models.ComputeNode.suspend_state == "suspended")
     if use_mean:
         res = res.group_by(models.ComputeNodeStats.compute_id,
                            models.ComputeNodeStats.memory_total,
@@ -726,7 +727,7 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
                            models.ComputeNode.vcpus)
     res = res.all()
     fields = ('compute_id', 'memory_used', 'memory_total',
-              'cpu_used_percent', 'hypervisor_hostname', 'vcpus')
+              'cpu_used_percent', 'hypervisor_hostname', 'vcpus', 'host_ip')
     compute_nodes = []
     for x in res:
         compute_nodes.append(dict((field, x[idx])
@@ -749,6 +750,26 @@ def clear_compute_stats(context, date):
     with session.begin():
         session.query(models.ComputeNodeStats).filter(
             models.ComputeNodeStats.created_at < date).delete()
+
+
+@require_admin_context
+def make_host_suspended(context, hostname):
+    session = get_session()
+    with session.begin():
+        compute_node = model_query(context, models.ComputeNode,
+                                   session=session)\
+            .filter(models.ComputeNode.hypervisor_hostname == hostname).first()
+        if compute_node:
+            compute_node.suspend_state = 'suspended'
+
+
+@require_admin_context
+def get_mac_address_to_wake(context, hostname):
+    session = get_session()
+    with session.begin():
+        return session.query(models.ComputeNode.mac_to_wake).\
+            filter(models.ComputeNode.hypervisor_hostname == hostname)\
+            .first()[0]
 
 
 @require_admin_context

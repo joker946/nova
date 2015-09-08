@@ -6339,3 +6339,6 @@ class ComputeManager(manager.Manager):
                     instance.cleaned = True
                 with utils.temporary_mutation(context, read_deleted='yes'):
                     instance.save(context)
+
+    def suspend_host(self, context, device):
+        utils.execute(['ethtool', '-s', device, 'wol', 'g'], run_as_root=True)

@@ -145,6 +145,7 @@ class ComputeNode(BASE, NovaBase):
     # nova.virt.hardware.VirtNUMAHostTopology.to_json()
     numa_topology = Column(Text)
     suspend_state = Column(Text, default='not suspended')
+    mac_to_wake = Column(Text)
 
 
 class ComputeNodeStats(BASE, NovaBase):

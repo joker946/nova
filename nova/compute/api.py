@@ -3184,6 +3184,12 @@ class API(base.Base):
         instance.task_state = task_states.MIGRATING
         instance.save(expected_task_state=[None])
 
+        migr = objects.Migration(context, source_node=instance.node,
+                                 dest_node=host_name,
+                                 instance_uuid=instance.uuid,
+                                 status='in progress')
+        migr.create(context)
+
         self.compute_task_api.live_migrate_instance(context, instance,
                 host_name, block_migration=block_migration,
                 disk_over_commit=disk_over_commit)
