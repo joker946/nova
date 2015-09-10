@@ -941,10 +941,15 @@ class ComputeAPI(object):
                 block_device_mapping=block_device_mapping, node=node,
                 limits=limits)
 
-    def suspend_host(self, ctxt, hostname, eth_device):
+    def get_host_mac_addr(self, ctxt, host):
         version = '3.0'
-        cctxt = self.client.prepare(server=hostname, version=version)
-        cctxt.cast(ctxt, 'suspend_host', device=eth_device)
+        cctxt = self.client.prepare(server=host, version=version)
+        return cctxt.call(ctxt, 'get_host_mac_addr')
+
+    def suspend_host(self, ctxt, host):
+        version = '3.0'
+        cctxt = self.client.prepare(server=host, version=version)
+        cctxt.cast(ctxt, 'suspend_host')
 
 
 class SecurityGroupAPI(object):

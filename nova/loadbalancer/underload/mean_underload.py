@@ -82,10 +82,9 @@ class MeanUnderload(Base):
                 if mac:
                     continue
                 out, err = nova_utils.execute('arp', '-a', node['host_ip'])
-                mac = out.split()[3]
-                eth_device = out.split()[6]
-                self.compute_rpc.suspend_host(context,
-                                              node['hypervisor_hostname'],
-                                              eth_device)
+                mac = self.compute_rpc.get_host_mac_addr(
+                    context, node['hypervisor_hostname'])
                 db.compute_node_update(context, node['compute_id'],
                                        {'mac_to_wake': mac})
+                self.compute_rpc.suspend_host(context,
+                                              node['hypervisor_hostname'])
