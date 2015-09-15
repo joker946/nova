@@ -47,6 +47,8 @@ class MeanUnderload(Base):
         cpu_max = CONF.loadbalancer_mean_underload.threshold_cpu
         memory_max = CONF.loadbalancer_mean_underload.threshold_memory
         compute_nodes = db.get_compute_node_stats(context, use_mean=True)
+        if len(compute_nodes) <= 1:
+            return
         instances = []
         for node in compute_nodes:
             node_instances = db.get_instances_stat(context,
@@ -58,12 +60,21 @@ class MeanUnderload(Base):
             memory = host_loads[node]['mem']
             cpu = host_loads[node]['cpu']
             if (cpu < cpu_max) and (memory < memory_max):
+                compute_id = filter(lambda x: x['hypervisor_hostname'] == node,
+                                    compute_nodes)[0]['compute_id']
                 # Underload is needed.
                 LOG.debug('underload is needed')
-                db.make_host_suspended(context, node)
+                db.compute_node_update(context, compute_id,
+                                       {'suspend_state': 'suspending'})
                 minim = MinimizeSD()
-                minim.migrate_all_vms_from_host(context, node)
-                return True
+                migrated = minim.migrate_all_vms_from_host(context, node)
+                # If host is empty or all vms has been migrated.
+                if migrated:
+                    db.compute_node_update(context, compute_id,
+                                           {'suspend_state': 'suspended'})
+                    return True
+                db.compute_node_update(context, compute_id,
+                                       {'suspend_state': 'not suspended'})
 
     def check_is_all_vms_migrated(self, context):
         suspended_nodes = db.get_compute_node_stats(context,
@@ -81,7 +92,6 @@ class MeanUnderload(Base):
                                                  node['hypervisor_hostname'])
                 if mac:
                     continue
-                out, err = nova_utils.execute('arp', '-a', node['host_ip'])
                 mac = self.compute_rpc.get_host_mac_addr(
                     context, node['hypervisor_hostname'])
                 db.compute_node_update(context, node['compute_id'],

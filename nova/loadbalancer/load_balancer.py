@@ -115,15 +115,14 @@ class LoadBalancer(manager.Manager):
 
     def _balancer(self, context):
         make_stats()
-        underload = self.underload_class.indicate(context)
-        if underload:
-            return
         node, nodes, extra_info = self.threshold_class.indicate(context)
         if node:
             return self.balancer_class.balance(context,
                                                node=node,
                                                nodes=nodes,
                                                extra_info=extra_info)
+        else:
+            self.underload_class.indicate(context)
 
     @periodic_task.periodic_task
     def indicate_threshold(self, context):

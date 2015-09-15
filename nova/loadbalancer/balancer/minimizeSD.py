@@ -66,7 +66,10 @@ class MinimizeSD(BaseBalancer):
     def migrate_all_vms_from_host(self, context, host):
         compute_nodes = db.get_compute_node_stats(context, read_suspended=True)
         instances = db.get_instances_stat(context, host)
+        if not instances:
+            return True
         host_loads = lb_utils.fill_compute_stats(instances, compute_nodes)
+        migrated = False
         vm_host_map = []
         for instance in instances:
             for node in compute_nodes:
@@ -95,7 +98,11 @@ class MinimizeSD(BaseBalancer):
                         continue
                     self.migrate(context, instance['instance_uuid'],
                                  vms['host'])
+                    migrated = True
                     break
+        if migrated:
+            return True
+        return False
 
     def min_sd(self, context, **kwargs):
         compute_nodes = kwargs.get('nodes')

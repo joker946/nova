@@ -74,11 +74,3 @@ class BaseBalancer(object):
                                                 instance_uuid)
         self.compute_api.live_migrate(lb_utils.get_context(), instance,
                                       False, False, hostname)
-        migr = objects.Migration(context,
-                                 source_node=instance.node,
-                                 source_compute=instance.node,
-                                 dest_node=hostname,
-                                 dest_compute=hostname,
-                                 instance_uuid=instance_uuid,
-                                 status='in progress')
-        migr.create(context)

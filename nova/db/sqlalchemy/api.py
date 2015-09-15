@@ -740,7 +740,9 @@ def get_instances_stat(context, host):
     return model_query(context, models.InstanceStats, read_deleted="no").\
         join(models.Instance,
              models.InstanceStats.instance_uuid == models.Instance.uuid)\
-        .filter(models.Instance.host == host).options(joinedload('instance'))\
+        .filter(models.Instance.host == host)\
+        .filter(models.Instance.vm_state == 'active')\
+        .options(joinedload('instance'))\
         .all()
 
 

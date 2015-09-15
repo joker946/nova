@@ -588,6 +588,13 @@ class ComputeTaskManager(base.Base):
                              task_state=None,
                              expected_task_state=task_states.MIGRATING,),
                         ex, request_spec, self.db)
+                migration_obj = objects.Migration.get_by_instance_and_status(
+                    context,
+                    instance['uuid'],
+                    'in progress')
+                if migration_obj:
+                    migration_obj.status = 'error'
+                    migration_obj.save()
         except Exception as ex:
             LOG.error(_('Migration of instance %(instance_id)s to host'
                        ' %(dest)s unexpectedly failed.'),
