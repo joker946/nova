@@ -15,7 +15,6 @@
 
 from nova import db
 from nova import objects
-from nova import utils as nova_utils
 from nova.loadbalancer.underload.base import Base
 from nova.loadbalancer.balancer.minimizeSD import MinimizeSD
 from nova.loadbalancer import utils
@@ -42,6 +41,7 @@ CONF.register_opts(lb_opts, 'loadbalancer_mean_underload')
 class MeanUnderload(Base):
     def __init__(self):
         self.compute_rpc = compute_api.ComputeAPI()
+        self.minimizeSD = MinimizeSD()
 
     def indicate(self, context):
         cpu_max = CONF.loadbalancer_mean_underload.threshold_cpu
@@ -66,28 +66,42 @@ class MeanUnderload(Base):
                 LOG.debug('underload is needed')
                 db.compute_node_update(context, compute_id,
                                        {'suspend_state': 'suspending'})
-                minim = MinimizeSD()
-                migrated = minim.migrate_all_vms_from_host(context, node)
-                # If host is empty or all vms has been migrated.
+                migrated = self.minimizeSD.migrate_all_vms_from_host(context,
+                                                                     node)
+                # If host is empty or all vms have been migrated.
                 if migrated:
-                    db.compute_node_update(context, compute_id,
-                                           {'suspend_state': 'suspended'})
                     return True
                 db.compute_node_update(context, compute_id,
                                        {'suspend_state': 'not suspended'})
 
+    def host_is_empty(self, context, host):
+        instances = db.get_instances_stat(context, host)
+        if not instances:
+            return True
+        return False
+
     def check_is_all_vms_migrated(self, context):
-        suspended_nodes = db.get_compute_node_stats(context,
-                                                    read_suspended='only')
+        suspended_nodes = db.get_compute_node_stats(
+            context,
+            read_suspended='suspending')
         for node in suspended_nodes:
             active_migrations = objects.migration.MigrationList\
                 .get_in_progress_by_host_and_node(context,
                                                   node['hypervisor_hostname'],
                                                   node['hypervisor_hostname'])
             if active_migrations:
-                LOG.debug('There is some migrations is active state')
+                LOG.debug('There is some migrations that are in active state')
+                # TODO (alexchadin) Make checking that all vms have been migrated.
                 return
             else:
+                if self.host_is_empty(context, node['hypervisor_hostname']):
+                    db.compute_node_update(context, node['compute_id'],
+                                           {'suspend_state': 'suspended'})
+                else:
+                    self.minimizeSD.migrate_all_vms_from_host(
+                        context,
+                        node['hypervisor_hostname'])
+                    return
                 mac = db.get_mac_address_to_wake(context,
                                                  node['hypervisor_hostname'])
                 if mac:

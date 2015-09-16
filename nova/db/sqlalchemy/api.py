@@ -720,6 +720,8 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
         pass
     if read_suspended == "only":
         res = res.filter(models.ComputeNode.suspend_state == "suspended")
+    if read_suspended == 'suspending':
+        res = res.filter(models.ComputeNode.suspend_state == "suspending")
     if use_mean:
         res = res.group_by(models.ComputeNodeStats.compute_id,
                            models.ComputeNodeStats.memory_total,
