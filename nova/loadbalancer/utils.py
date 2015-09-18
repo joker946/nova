@@ -153,22 +153,35 @@ def normalize_params(params, k='uuid'):
     return normalized_params
 
 
-def fill_compute_stats(instances, compute_nodes):
+def fill_compute_stats(instances, compute_nodes, sum_instance=False):
     host_loads = {}
-    for instance in instances:
-            cpu_util = calculate_cpu(instance, compute_nodes)
-            if instance.instance['host'] in host_loads:
-                host_loads[instance.instance['host']]['mem'] += instance['mem']
-                host_loads[instance.instance['host']]['cpu'] += cpu_util
+    if sum_instance:
+        for instance in instances:
+                cpu_util = calculate_cpu(instance, compute_nodes)
+                host = instance.instance['host']
+                if instance.instance['host'] in host_loads:
+                    host_loads[host]['mem'] += instance['mem']
+                    host_loads[host]['cpu'] += cpu_util
+                else:
+                    host_loads[host] = {}
+                    host_loads[host]['mem'] = instance['mem']
+                    host_loads[host]['cpu'] = cpu_util
+        for node in compute_nodes:
+            if node['hypervisor_hostname'] not in host_loads:
+                host_loads[node['hypervisor_hostname']] = {}
+                host_loads[node['hypervisor_hostname']]['mem'] = 0
+                host_loads[node['hypervisor_hostname']]['cpu'] = 0
+    else:
+        for node in compute_nodes:
+            host = node['hypervisor_hostname']
+            if host in host_loads:
+                host_loads[host] = {}
+                host_loads[host]['mem'] += node['memory_used']
+                host_loads[host]['cpu'] += node['cpu_used_percent']
             else:
-                host_loads[instance.instance['host']] = {}
-                host_loads[instance.instance['host']]['mem'] = instance['mem']
-                host_loads[instance.instance['host']]['cpu'] = cpu_util
-    for node in compute_nodes:
-        if node['hypervisor_hostname'] not in host_loads:
-            host_loads[node['hypervisor_hostname']] = {}
-            host_loads[node['hypervisor_hostname']]['mem'] = 0
-            host_loads[node['hypervisor_hostname']]['cpu'] = 0
+                host_loads[host] = {}
+                host_loads[host]['mem'] = node['memory_used']
+                host_loads[host]['cpu'] = node['cpu_used_percent']
     return host_loads
 
 
@@ -176,7 +189,11 @@ def calculate_host_loads(compute_nodes, compute_stats):
     host_loads = compute_stats
     for node in compute_nodes:
         host_loads[node['hypervisor_hostname']]['mem'] \
+            = float(host_loads[node['hypervisor_hostname']]['mem'])
+        host_loads[node['hypervisor_hostname']]['mem'] \
             /= float(node['memory_total'])
+        host_loads[node['hypervisor_hostname']]['cpu'] \
+            = float(host_loads[node['hypervisor_hostname']]['cpu'])
         host_loads[node['hypervisor_hostname']]['cpu'] \
             /= 100.00
     return host_loads
@@ -191,7 +208,7 @@ def calculate_sd(hosts, param):
         hosts, 0)) / len(hosts)
     sd = math.sqrt(variaton)
     LOG.debug("SD %(param)s: %(sd)f", {'sd': sd, 'param': param})
-    return sd
+    return (sd, mean)
 
 
 def calculate_cpu(instance, compute_nodes=None):

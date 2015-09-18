@@ -15,6 +15,7 @@
 
 from nova import db
 from nova import objects
+from nova import utils as nova_utils
 from nova.loadbalancer.underload.base import Base
 from nova.loadbalancer.balancer.minimizeSD import MinimizeSD
 from nova.loadbalancer import utils
@@ -29,7 +30,13 @@ lb_opts = [
                  help='CPU Underload Threshold'),
     cfg.FloatOpt('threshold_memory',
                  default=0.05,
-                 help='Memory Underload Threshold')
+                 help='Memory Underload Threshold'),
+    cfg.FloatOpt('unsuspend_cpu',
+                 default=0.40,
+                 help='CPU Unsuspend Threshold'),
+    cfg.FloatOpt('unsuspend_memory',
+                 default=0.40,
+                 help='CPU Unsuspend Threshold')
 ]
 
 
@@ -43,11 +50,13 @@ class MeanUnderload(Base):
         self.compute_rpc = compute_api.ComputeAPI()
         self.minimizeSD = MinimizeSD()
 
-    def indicate(self, context):
-        cpu_max = CONF.loadbalancer_mean_underload.threshold_cpu
-        memory_max = CONF.loadbalancer_mean_underload.threshold_memory
+    def indicate(self, context, **kwargs):
+        extra = kwargs.get('extra_info')
+        cpu_th = CONF.loadbalancer_mean_underload.threshold_cpu
+        memory_th = CONF.loadbalancer_mean_underload.threshold_memory
         compute_nodes = db.get_compute_node_stats(context, use_mean=True)
         if len(compute_nodes) <= 1:
+            self.unsuspend_host(context, extra_info=extra)
             return
         instances = []
         for node in compute_nodes:
@@ -59,7 +68,7 @@ class MeanUnderload(Base):
         for node in host_loads:
             memory = host_loads[node]['mem']
             cpu = host_loads[node]['cpu']
-            if (cpu < cpu_max) and (memory < memory_max):
+            if (cpu < cpu_th) or (memory < memory_th):
                 compute_id = filter(lambda x: x['hypervisor_hostname'] == node,
                                     compute_nodes)[0]['compute_id']
                 # Underload is needed.
@@ -68,11 +77,26 @@ class MeanUnderload(Base):
                                        {'suspend_state': 'suspending'})
                 migrated = self.minimizeSD.migrate_all_vms_from_host(context,
                                                                      node)
-                # If host is empty or all vms have been migrated.
                 if migrated:
                     return True
                 db.compute_node_update(context, compute_id,
                                        {'suspend_state': 'not suspended'})
+        self.unsuspend_host(context, extra_info=extra)
+
+    def unsuspend_host(self, context, extra_info=None):
+        cpu_mean = extra_info.get('cpu_mean')
+        ram_mean = extra_info.get('ram_mean')
+        unsuspend_cpu = CONF.loadbalancer_mean_underload.unsuspend_cpu
+        unsuspend_ram = CONF.loadbalancer_mean_underload.unsuspend_memory
+        if cpu_mean > unsuspend_cpu or ram_mean > unsuspend_ram:
+            compute_nodes = db.get_compute_node_stats(context,
+                                                      read_suspended='only')
+            for node in compute_nodes:
+                mac_to_wake = node['mac_to_wake']
+                nova_utils.execute('ether-wake', mac_to_wake, run_as_root=True)
+                db.compute_node_update(context, node['compute_id'],
+                                       {'suspend_state': 'not suspended')
+                return
 
     def host_is_empty(self, context, host):
         instances = db.get_instances_stat(context, host)
@@ -102,8 +126,7 @@ class MeanUnderload(Base):
                         context,
                         node['hypervisor_hostname'])
                     return
-                mac = db.get_mac_address_to_wake(context,
-                                                 node['hypervisor_hostname'])
+                mac = node['mac_to_wake']
                 if mac:
                     continue
                 mac = self.compute_rpc.get_host_mac_addr(

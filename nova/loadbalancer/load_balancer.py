@@ -122,7 +122,7 @@ class LoadBalancer(manager.Manager):
                                                nodes=nodes,
                                                extra_info=extra_info)
         else:
-            self.underload_class.indicate(context)
+            self.underload_class.indicate(context, extra_info=extra_info)
 
     @periodic_task.periodic_task
     def indicate_threshold(self, context):

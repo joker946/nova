@@ -57,8 +57,8 @@ class MinimizeSD(BaseBalancer):
         _host_loads[target_host]['mem'] += vm_ram
         _host_loads[target_host]['cpu'] += vm_cpu
         _host_loads = lb_utils.calculate_host_loads(compute_nodes, _host_loads)
-        ram_sd = lb_utils.calculate_sd(_host_loads, 'mem')
-        cpu_sd = lb_utils.calculate_sd(_host_loads, 'cpu')
+        ram_sd = lb_utils.calculate_sd(_host_loads, 'mem')[0]
+        cpu_sd = lb_utils.calculate_sd(_host_loads, 'cpu')[0]
         return {'cpu_sd': cpu_sd*self.cpu_weight,
                 'ram_sd': ram_sd*self.memory_weight,
                 'total_sd': cpu_sd*self.cpu_weight + ram_sd*self.memory_weight}

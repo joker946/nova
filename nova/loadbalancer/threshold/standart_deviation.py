@@ -58,10 +58,12 @@ class Standart_Deviation(base.Base):
         compute_stats = utils.fill_compute_stats(instances, compute_nodes)
         host_loads = utils.calculate_host_loads(compute_nodes, compute_stats)
         LOG.debug(_(host_loads))
-        ram_sd = utils.calculate_sd(host_loads, 'mem')
-        cpu_sd = utils.calculate_sd(host_loads, 'cpu')
+        ram_sd, ram_mean = utils.calculate_sd(host_loads, 'mem')
+        cpu_sd, cpu_mean = utils.calculate_sd(host_loads, 'cpu')
+        extra_info = {'cpu_overload': False,
+                      'cpu_mean': cpu_mean,
+                      'ram_mean': ram_mean}
         if cpu_sd > cpu_threshold or ram_sd > mem_threshold:
-            extra_info = {'cpu_overload': False}
             if cpu_sd > cpu_threshold:
                 overloaded_host = sorted(host_loads,
                                          key=lambda x: host_loads[x]['cpu'],
@@ -76,4 +78,4 @@ class Standart_Deviation(base.Base):
                 x['hypervisor_hostname'] == overloaded_host, compute_nodes)[0]
             LOG.debug(_(host))
             return host, compute_nodes, extra_info
-        return [], [], {}
+        return [], [], extra_info
