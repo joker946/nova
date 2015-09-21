@@ -16,7 +16,6 @@
 from oslo.config import cfg
 
 from nova.compute import api as compute_api
-from nova import objects
 from nova.loadbalancer import utils as lb_utils
 from nova.openstack.common import importutils
 from nova.scheduler import filters

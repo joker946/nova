@@ -95,7 +95,7 @@ class MeanUnderload(Base):
                 mac_to_wake = node['mac_to_wake']
                 nova_utils.execute('ether-wake', mac_to_wake, run_as_root=True)
                 db.compute_node_update(context, node['compute_id'],
-                                       {'suspend_state': 'not suspended')
+                                       {'suspend_state': 'not suspended'})
                 return
 
     def host_is_empty(self, context, host):
@@ -119,19 +119,15 @@ class MeanUnderload(Base):
                 return
             else:
                 if self.host_is_empty(context, node['hypervisor_hostname']):
+                    mac = self.compute_rpc.get_host_mac_addr(
+                        context, node['hypervisor_hostname'])
+                    db.compute_node_update(context, node['compute_id'],
+                                           {'mac_to_wake': mac})
+                    self.compute_rpc.suspend_host(context,
+                                                  node['hypervisor_hostname'])
                     db.compute_node_update(context, node['compute_id'],
                                            {'suspend_state': 'suspended'})
                 else:
                     self.minimizeSD.migrate_all_vms_from_host(
                         context,
                         node['hypervisor_hostname'])
-                    return
-                mac = node['mac_to_wake']
-                if mac:
-                    continue
-                mac = self.compute_rpc.get_host_mac_addr(
-                    context, node['hypervisor_hostname'])
-                db.compute_node_update(context, node['compute_id'],
-                                       {'mac_to_wake': mac})
-                self.compute_rpc.suspend_host(context,
-                                              node['hypervisor_hostname'])
