@@ -21,25 +21,9 @@ from nova.openstack.common import importutils
 from nova.scheduler import filters
 
 
-lb_opts = [
-    cfg.ListOpt('load_balancer_default_filters',
-                default=[
-                    'AggregateInstanceExtraSpecsFilter',
-                    'AvailabilityZoneFilter',
-                    'RealRamFilter',
-                    'ComputeFilter',
-                    'ImagePropertiesFilter',
-                    'ServerGroupAntiAffinityFilter',
-                    'ServerGroupAffinityFilter',
-                    'SuspendFilter'
-                ],
-                help='Which filter class names to use for filtering hosts '
-                'when not specified in the request.')
-]
-
 CONF = cfg.CONF
-CONF.register_opts(lb_opts, 'loadbalancer')
 CONF.import_opt('scheduler_host_manager', 'nova.scheduler.driver')
+CONF.import_opt('scheduler_default_filters', 'nova.scheduler.host_manager')
 
 
 class BaseBalancer(object):
@@ -59,7 +43,7 @@ class BaseBalancer(object):
                                                              chosen_instance,
                                                              nodes)
         classes = self.host_manager.choose_host_filters(
-            CONF.loadbalancer.load_balancer_default_filters)
+            CONF.scheduler_default_filters)
         # If hypervisor_hostname is set, query returns only specified host.
         hosts = self.host_manager.get_all_host_states(context,
                                                       hypervisor_hostname=host)
