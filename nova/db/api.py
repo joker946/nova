@@ -246,6 +246,10 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
                                        read_suspended=read_suspended)
 
 
+def get_compute_nodes_ha(context):
+    return IMPL.get_compute_nodes_ha(context)
+
+
 def get_instances_stat(context, host):
     return IMPL.get_instances_stat(context, host)
 

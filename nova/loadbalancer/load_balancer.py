@@ -25,6 +25,12 @@ from statistics import make_stats
 
 
 lb_opts = [
+    cfg.BoolOpt('enable_balancer',
+                default=True,
+                help='Turn on or turn off balance mechanism'),
+    cfg.BoolOpt('enable_underload',
+                default=False,
+                help='Turn on or turn off underload mechanism'),
     cfg.StrOpt('threshold_class',
                default='standart_deviation',
                help='Threshold class'),
@@ -116,12 +122,12 @@ class LoadBalancer(manager.Manager):
     def _balancer(self, context):
         make_stats()
         node, nodes, extra_info = self.threshold_class.indicate(context)
-        if node:
+        if node and CONF.loadbalancer.enable_balancer:
             return self.balancer_class.balance(context,
                                                node=node,
                                                nodes=nodes,
                                                extra_info=extra_info)
-        else:
+        if not node and CONF.loadbalancer.enable_underload:
             self.underload_class.indicate(context, extra_info=extra_info)
 
     @periodic_task.periodic_task

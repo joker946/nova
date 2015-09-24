@@ -741,6 +741,29 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
 
 
 @require_admin_context
+def get_compute_nodes_ha(context):
+    session = get_session()
+    query = session.query(
+        models.AggregateHost.host, models.Aggregate.name,
+        models.AggregateMetadata.key, models.AggregateMetadata.value)\
+        .join(models.Aggregate,
+              models.AggregateHost.aggregate_id == models.Aggregate.id)\
+        .join(models.AggregateMetadata,
+              models.Aggregate.id == models.AggregateMetadata.aggregate_id)\
+        .filter(models.AggregateHost.deleted == 0)\
+        .filter(models.AggregateMetadata.key == 'availability_zone')
+    res = query.all()
+    pairs = {}
+    for x in res:
+        if x[0] not in pairs:
+            pairs[x[0]] = {'ha': [x[1]]}
+        else:
+            pairs[x[0]]['ha'].append(x[1])
+        pairs[x[0]]['az'] = x[4]
+    return pairs
+
+
+@require_admin_context
 def get_instances_stat(context, host):
     return model_query(context, models.InstanceStats, read_deleted="no").\
         join(models.Instance,

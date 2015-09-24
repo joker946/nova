@@ -426,3 +426,7 @@ class HostManager(object):
             del self.host_state_map[state_key]
 
         return self.host_state_map.itervalues()
+
+    def get_grouped_hosts(self, context):
+        pass
+        
