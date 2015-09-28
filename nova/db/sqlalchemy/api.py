@@ -743,24 +743,27 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
 @require_admin_context
 def get_compute_nodes_ha(context):
     session = get_session()
-    query = session.query(
+    nodes = session.query(models.ComputeNode.hypervisor_hostname)\
+        .filter(models.ComputeNode.deleted == 0).all()
+    node_ha = session.query(
         models.AggregateHost.host, models.Aggregate.name,
-        models.AggregateMetadata.key, models.AggregateMetadata.value)\
+        models.AggregateMetadata.value)\
         .join(models.Aggregate,
               models.AggregateHost.aggregate_id == models.Aggregate.id)\
-        .join(models.AggregateMetadata,
-              models.Aggregate.id == models.AggregateMetadata.aggregate_id)\
-        .filter(models.AggregateHost.deleted == 0)\
-        .filter(models.AggregateMetadata.key == 'availability_zone')
-    res = query.all()
-    pairs = {}
-    for x in res:
-        if x[0] not in pairs:
-            pairs[x[0]] = {'ha': [x[1]]}
-        else:
-            pairs[x[0]]['ha'].append(x[1])
-        pairs[x[0]]['az'] = x[4]
-    return pairs
+        .outerjoin(
+            models.AggregateMetadata,
+            models.Aggregate.id == models.AggregateMetadata.aggregate_id)\
+        .filter(and_(models.AggregateHost.deleted == 0,
+                or_(models.AggregateMetadata.key == 'availability_zone',
+                    models.AggregateMetadata.key == None))).all()
+    LOG.debug(node_ha)
+    nodes_ha = []
+    for node in node_ha:
+        nodes_ha.append({node[0]: {'ha': node[1], 'az': node[2]}})
+    for node in nodes:
+        if not any([x.get(node[0]) for x in nodes_ha]):
+            nodes_ha.append({node[0]: {}})
+    return nodes_ha
 
 
 @require_admin_context
