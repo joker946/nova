@@ -14,6 +14,7 @@
 #    under the License.
 
 import datetime
+import re
 
 from oslo.config import cfg
 from nova import db
@@ -119,9 +120,36 @@ class LoadBalancer(manager.Manager):
         db.clear_compute_stats(context, delta_time)
         LOG.debug("Compute stats cleared")
 
+    def check_string(self, string, template):
+        pattern = re.compile(template)
+        if pattern.match(string):
+            return True
+        return False
+
+    def rules(self, context):
+        # types = ['host', 'ha', 'az']
+        rules = db.lb_rule_get_all(context)
+        nodes_ha = db.get_compute_nodes_ha(context)
+        for node in nodes_ha:
+            for rule in rules:
+                if rule['type'] == 'ha':
+                    if self.check_string(node['ha'], rule['value']):
+                        node['passes'] = rule['allow']
+                if rule['type'] == 'host':
+                    if self.check_string(node['host'], rule['value']):
+                        node['passes'] = rule['allow']
+                if rule['type'] == 'az':
+                    if self.check_string(node['az'], rule['value']):
+                        node['passes'] = rule['allow']
+        LOG.debug(nodes_ha)
+
     def _balancer(self, context):
         make_stats()
         node, nodes, extra_info = self.threshold_class.indicate(context)
+        # db.lb_rule_create(context, {'type': 'host',
+        #                            'value': 'compute1.students.dev',
+        #                            'allow': False})
+        self.rules(context)
         if node and CONF.loadbalancer.enable_balancer:
             return self.balancer_class.balance(context,
                                                node=node,

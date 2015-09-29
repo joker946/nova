@@ -250,6 +250,18 @@ def get_compute_nodes_ha(context):
     return IMPL.get_compute_nodes_ha(context)
 
 
+def lb_rule_create(context, values):
+    return IMPL.lb_rule_create(context, values)
+
+
+def lb_rule_get_all(context):
+    return IMPL.lb_rule_get_all(context)
+
+
+def lb_rule_delete(context, rule_id):
+    return IMPL.lb_rule_delete(context, rule_id)
+
+
 def get_instances_stat(context, host):
     return IMPL.get_instances_stat(context, host)
 

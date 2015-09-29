@@ -759,11 +759,38 @@ def get_compute_nodes_ha(context):
     LOG.debug(node_ha)
     nodes_ha = []
     for node in node_ha:
-        nodes_ha.append({node[0]: {'ha': node[1], 'az': node[2]}})
+        nodes_ha.append({'host': node[0], 'ha': node[1], 'az': node[2]})
     for node in nodes:
-        if not any([x.get(node[0]) for x in nodes_ha]):
-            nodes_ha.append({node[0]: {}})
+        if not any([x['host'] == node for x in nodes_ha]):
+            nodes_ha.append({'host': node[0]})
     return nodes_ha
+
+
+@require_admin_context
+def lb_rule_create(context, values):
+    lb_rule = models.LoadBalancerRules()
+    lb_rule.update(values)
+    lb_rule.save()
+    return lb_rule
+
+
+@require_admin_context
+def lb_rule_get_all(context):
+    session = get_session()
+    with session.begin():
+        return model_query(context, models.LoadBalancerRules,
+                           session=session, read_deleted='no').all()
+
+
+@require_admin_context
+def lb_rule_delete(context, rule_id):
+    session = get_session()
+    with session.begin():
+        result = model_query(context, models.LoadBalancerRules,
+                             session=session).filter_by(id=rule_id).\
+                 soft_delete(synchronize_session=False)
+        if not result:
+            raise Exception('LoadBalancer Rule not found')
 
 
 @require_admin_context
