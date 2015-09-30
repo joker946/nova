@@ -759,10 +759,11 @@ def get_compute_nodes_ha(context):
     LOG.debug(node_ha)
     nodes_ha = []
     for node in node_ha:
-        nodes_ha.append({'host': node[0], 'ha': node[1], 'az': node[2]})
+        nodes_ha.append({'host': node[0], 'ha': node[1],
+                         'az': node[2], 'passes': True})
     for node in nodes:
-        if not any([x['host'] == node for x in nodes_ha]):
-            nodes_ha.append({'host': node[0]})
+        if not any([x['host'] == node[0] for x in nodes_ha]):
+            nodes_ha.append({'host': node[0], 'passes': True})
     return nodes_ha
 
 

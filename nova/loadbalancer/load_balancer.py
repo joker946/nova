@@ -127,19 +127,13 @@ class LoadBalancer(manager.Manager):
         return False
 
     def rules(self, context):
-        # types = ['host', 'ha', 'az']
+        types = ['host', 'ha', 'az']
         rules = db.lb_rule_get_all(context)
         nodes_ha = db.get_compute_nodes_ha(context)
         for node in nodes_ha:
             for rule in rules:
-                if rule['type'] == 'ha':
-                    if self.check_string(node['ha'], rule['value']):
-                        node['passes'] = rule['allow']
-                if rule['type'] == 'host':
-                    if self.check_string(node['host'], rule['value']):
-                        node['passes'] = rule['allow']
-                if rule['type'] == 'az':
-                    if self.check_string(node['az'], rule['value']):
+                if rule['type'] in types and rule['type'] in node:
+                    if self.check_string(node[rule['type']], rule['value']):
                         node['passes'] = rule['allow']
         LOG.debug(nodes_ha)
 
