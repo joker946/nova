@@ -64,7 +64,8 @@ class MinimizeSD(BaseBalancer):
                 'total_sd': cpu_sd*self.cpu_weight + ram_sd*self.memory_weight}
 
     def migrate_all_vms_from_host(self, context, host):
-        compute_nodes = db.get_compute_node_stats(context, read_suspended=True)
+        compute_nodes = lb_utils.get_compute_node_stats(context,
+                                                        read_suspended=True)
         instances = db.get_instances_stat(context, host)
         if not instances:
             return True

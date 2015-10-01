@@ -54,7 +54,7 @@ class MeanUnderload(Base):
         extra = kwargs.get('extra_info')
         cpu_th = CONF.loadbalancer_mean_underload.threshold_cpu
         memory_th = CONF.loadbalancer_mean_underload.threshold_memory
-        compute_nodes = db.get_compute_node_stats(context, use_mean=True)
+        compute_nodes = utils.get_compute_node_stats(context, use_mean=True)
         if len(compute_nodes) <= 1:
             self.unsuspend_host(context, extra_info=extra)
             return
@@ -89,8 +89,8 @@ class MeanUnderload(Base):
         unsuspend_cpu = CONF.loadbalancer_mean_underload.unsuspend_cpu
         unsuspend_ram = CONF.loadbalancer_mean_underload.unsuspend_memory
         if cpu_mean > unsuspend_cpu or ram_mean > unsuspend_ram:
-            compute_nodes = db.get_compute_node_stats(context,
-                                                      read_suspended='only')
+            compute_nodes = utils.get_compute_node_stats(
+                context, read_suspended='only')
             for node in compute_nodes:
                 mac_to_wake = node['mac_to_wake']
                 nova_utils.execute('ether-wake', mac_to_wake, run_as_root=True)
@@ -105,7 +105,7 @@ class MeanUnderload(Base):
         return False
 
     def check_is_all_vms_migrated(self, context):
-        suspended_nodes = db.get_compute_node_stats(
+        suspended_nodes = utils.get_compute_node_stats(
             context,
             read_suspended='suspending')
         for node in suspended_nodes:

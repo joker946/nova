@@ -682,7 +682,8 @@ def compute_node_stats_upsert(context, values):
 
 
 @require_admin_context
-def get_compute_node_stats(context, use_mean=False, read_suspended=False):
+def get_compute_node_stats(context, use_mean=False, read_suspended=False,
+                           nodes=None):
     session = get_session()
     res = None
     if use_mean:
@@ -723,6 +724,8 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
         res = res.filter(models.ComputeNode.suspend_state == "suspended")
     if read_suspended == 'suspending':
         res = res.filter(models.ComputeNode.suspend_state == "suspending")
+    if nodes:
+        res = res.filter(models.ComputeNode.hypervisor_hostname.in_(nodes))
     if use_mean:
         res = res.group_by(models.ComputeNodeStats.compute_id,
                            models.ComputeNodeStats.memory_total,

@@ -17,6 +17,7 @@
 from keystoneclient.v2_0 import client
 
 from nova import context as nova_context
+from nova import db
 from nova import image
 from nova import objects
 from nova.i18n import _
@@ -26,6 +27,7 @@ from nova.scheduler import utils
 from oslo.config import cfg
 
 import math
+import re
 
 auth_options = [
     cfg.StrOpt('admin_user',
@@ -93,6 +95,33 @@ def get_instance_resources(i):
             'block_dev_iops'] - i['prev_block_dev_iops']
         return instance_resources
     return None
+
+
+def check_string(string, template):
+    pattern = re.compile(template)
+    if pattern.match(string):
+        return True
+    return False
+
+
+def make_zones(context):
+    types = ['host', 'ha', 'az']
+    rules = db.lb_rule_get_all(context)
+    nodes_ha = db.get_compute_nodes_ha(context)
+    for node in nodes_ha:
+        for rule in rules:
+            if rule['type'] in types and rule['type'] in node:
+                if check_string(node[rule['type']], rule['value']):
+                    node['passes'] = rule['allow']
+    LOG.debug(nodes_ha)
+    return set(node['host'] for node in nodes_ha if node['passes'])
+
+
+def get_compute_node_stats(context, use_mean=False, read_suspended=False):
+    allow_nodes = make_zones(context)
+    return db.get_compute_node_stats(context, use_mean=use_mean,
+                                     read_suspended=read_suspended,
+                                     nodes=allow_nodes)
 
 
 def build_filter_properties(context, chosen_instance, nodes):
