@@ -27,6 +27,7 @@ from nova.api.openstack.compute import flavors
 from nova.api.openstack.compute import image_metadata
 from nova.api.openstack.compute import images
 from nova.api.openstack.compute import ips
+from nova.api.openstack.compute import balancer
 from nova.api.openstack.compute import limits
 from nova.api.openstack.compute import plugins
 from nova.api.openstack.compute import server_metadata
@@ -93,6 +94,13 @@ class APIRouter(nova.api.openstack.APIRouter):
             self.resources['flavors'] = flavors.create_resource()
             mapper.resource("flavor", "flavors",
                             controller=self.resources['flavors'],
+                            collection={'detail': 'GET'},
+                            member={'action': 'POST'})
+
+        if init_only is None or 'lbrules' in init_only:
+            self.resources['lbrules'] = balancer.create_resource()
+            mapper.resource("lbrule", "lbrules",
+                            controller=self.resources['lbrules'],
                             collection={'detail': 'GET'},
                             member={'action': 'POST'})
 

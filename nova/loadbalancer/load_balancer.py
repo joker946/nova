@@ -14,7 +14,6 @@
 #    under the License.
 
 import datetime
-import re
 
 from oslo.config import cfg
 from nova import db
