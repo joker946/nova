@@ -122,9 +122,6 @@ class LoadBalancer(manager.Manager):
     def _balancer(self, context):
         make_stats()
         node, nodes, extra_info = self.threshold_class.indicate(context)
-        # db.lb_rule_create(context, {'type': 'host',
-        #                            'value': 'compute1.students.dev',
-        #                            'allow': False})
         self.rules(context)
         if node and CONF.loadbalancer.enable_balancer:
             return self.balancer_class.balance(context,

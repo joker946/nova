@@ -14,70 +14,17 @@
 #    under the License.
 
 
-from keystoneclient.v2_0 import client
-
-from nova import context as nova_context
 from nova import db
-from nova import image
 from nova import objects
 from nova.i18n import _
 from nova.openstack.common import log as logging
 from nova.scheduler import utils
 
-from oslo.config import cfg
 
 import math
 import re
 
-auth_options = [
-    cfg.StrOpt('admin_user',
-               default='nova',
-               help='Keystone account username'),
-    cfg.StrOpt('admin_password',
-               default='nova',
-               help='Keystone account password'),
-    cfg.StrOpt('admin_tenant_name',
-               default='service',
-               help='Tenant name'),
-    cfg.StrOpt('auth_uri',
-               default='http://controller:5000/v2.0',
-               help='Public Identity API endpoint'),
-]
-
-
-CONF = cfg.CONF
-CONF.register_opts(auth_options, 'keystone_authtoken')
 LOG = logging.getLogger(__name__)
-
-nova_client = client.Client(
-    username=CONF.keystone_authtoken.admin_user,
-    password=CONF.keystone_authtoken.admin_password,
-    tenant_name=CONF.keystone_authtoken.admin_tenant_name,
-    auth_url=CONF.keystone_authtoken.auth_uri
-)
-
-image_api = image.API()
-
-
-def get_context():
-    creds = nova_client
-    s_catalog = creds.service_catalog.catalog['serviceCatalog']
-    ctx = nova_context.RequestContext(user_id=creds.user_id,
-                                      is_admin=True,
-                                      project_id=creds.project_id,
-                                      user_name=creds.username,
-                                      project_name=creds.project_name,
-                                      roles=['admin'],
-                                      auth_token=creds.auth_token,
-                                      remote_address=None,
-                                      service_catalog=s_catalog,
-                                      request_id=None)
-    return ctx
-
-
-def _get_image(image_uuid):
-    ctx = get_context()
-    return (image_api.get(ctx, image_uuid), ctx)
 
 
 def get_instance_object(context, uuid):
@@ -126,9 +73,8 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
 
 def build_filter_properties(context, chosen_instance, nodes):
     instance = get_instance_object(context, chosen_instance['uuid'])
-    image, ctx = _get_image(instance.get('image_ref'))
-    req_spec = utils.build_request_spec(ctx, image, [instance])
-    filter_properties = {'context': ctx}
+    req_spec = utils.build_request_spec(context, {}, [instance])
+    filter_properties = {'context': context}
     instance_type = req_spec.get('instance_type')
     project_id = req_spec['instance_properties']['project_id']
     instance_resources = chosen_instance['resources']

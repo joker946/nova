@@ -20,7 +20,7 @@ from nova import db
 from nova.api.openstack.compute.views import balancer as balancer_views
 from nova.api.openstack import wsgi
 from nova.api.openstack import xmlutil
-from nova.compute import flavors
+from nova.loadbalancer.underload.mean_underload import MeanUnderload
 from nova import exception
 from nova.i18n import _
 from webob import exc
@@ -117,6 +117,12 @@ class Controller(wsgi.Controller):
                 raise exc.HTTPBadRequest(explanation=msg)
             db.lb_rule_create(context, rule)
             return rule
+
+    @wsgi.action('suspend_host')
+    def suspend_host(self, req, body):
+        context = req.environ['nova.context']
+        host = body['suspend_host']['host']
+        MeanUnderload.suspend_host(context, host)
 
     def _get_rules(self, req):
         """Helper function that returns a list of flavor dicts."""

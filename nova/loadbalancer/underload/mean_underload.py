@@ -69,19 +69,28 @@ class MeanUnderload(Base):
             memory = host_loads[node]['mem']
             cpu = host_loads[node]['cpu']
             if (cpu < cpu_th) or (memory < memory_th):
-                compute_id = filter(lambda x: x['hypervisor_hostname'] == node,
-                                    compute_nodes)[0]['compute_id']
-                # Underload is needed.
-                LOG.debug('underload is needed')
-                db.compute_node_update(context, compute_id,
-                                       {'suspend_state': 'suspending'})
-                migrated = self.minimizeSD.migrate_all_vms_from_host(context,
-                                                                     node)
-                if migrated:
-                    return True
-                db.compute_node_update(context, compute_id,
-                                       {'suspend_state': 'not suspended'})
+                if self.suspend_host(context, node,
+                                     compute_nodes=compute_nodes):
+                    return
         self.unsuspend_host(context, extra_info=extra)
+
+    def suspend_host(self, context, node, compute_nodes=None):
+        if not compute_nodes:
+            compute_nodes = utils.get_compute_node_stats(context,
+                                                         use_mean=True)
+        compute_id = filter(lambda x: x['hypervisor_hostname'] == node,
+                            compute_nodes)[0]['compute_id']
+        # Underload is needed.
+        LOG.debug('underload is needed')
+        db.compute_node_update(context, compute_id,
+                               {'suspend_state': 'suspending'})
+        migrated = self.minimizeSD.migrate_all_vms_from_host(context,
+                                                             node)
+        if migrated:
+            return True
+        else:
+            db.compute_node_update(context, compute_id,
+                                   {'suspend_state': 'not suspended'})
 
     def unsuspend_host(self, context, extra_info=None):
         cpu_mean = extra_info.get('cpu_mean')
