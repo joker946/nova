@@ -102,8 +102,8 @@ class APIRouter(nova.api.openstack.APIRouter):
             mapper.resource("lbrule", "lbrules",
                             controller=self.resources['lbrules'],
                             collection={'detail': 'GET',
-                                        'suspend': 'POST',
-                                        'action': 'POST'})
+                                        'action': 'POST',
+                                        'nodes': 'GET'})
 
         if init_only is None or 'image_metadata' in init_only:
             self.resources['image_metadata'] = image_metadata.create_resource()

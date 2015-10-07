@@ -13,18 +13,53 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from keystoneclient.v2_0 import client
 
+from nova import context as nova_context
 from nova import db
+from nova import image
 from nova import objects
-from nova.i18n import _
 from nova.openstack.common import log as logging
 from nova.scheduler import utils
 
+from oslo.config import cfg
 
 import math
 import re
 
+image_api = image.API()
+
+
+CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
+
+nova_client = client.Client(
+    username='nova',
+    password='nova',
+    tenant_name='service',
+    auth_url='http://controller:5000/v2.0'
+)
+
+
+def _get_image(image_uuid):
+    ctx = get_context()
+    return (image_api.get(ctx, image_uuid), ctx)
+
+
+def get_context():
+    creds = nova_client
+    s_catalog = creds.service_catalog.catalog['serviceCatalog']
+    ctx = nova_context.RequestContext(user_id=creds.user_id,
+                                      is_admin=True,
+                                      project_id=creds.project_id,
+                                      user_name=creds.username,
+                                      project_name=creds.project_name,
+                                      roles=['admin'],
+                                      auth_token=creds.auth_token,
+                                      remote_address=None,
+                                      service_catalog=s_catalog,
+                                      request_id=None)
+    return ctx
 
 
 def get_instance_object(context, uuid):
@@ -51,21 +86,22 @@ def check_string(string, template):
     return False
 
 
-def make_zones(context):
-    types = ['host', 'ha', 'az']
+def apply_rules(node, rules):
+    result = True
+    for rule in rules:
+        if check_string(node.get(rule['type']), rule['value']):
+            result = rule['allow']
+    return result
+
+
+def get_allowed_hosts(context):
     rules = db.lb_rule_get_all(context)
-    nodes_ha = db.get_compute_nodes_ha(context)
-    for node in nodes_ha:
-        for rule in rules:
-            if rule['type'] in types and rule['type'] in node:
-                if check_string(node[rule['type']], rule['value']):
-                    node['passes'] = rule['allow']
-    LOG.debug(nodes_ha)
-    return set(node['host'] for node in nodes_ha if node['passes'])
+    nodes = db.get_compute_nodes_ha(context)
+    return set(node['host'] for node in nodes if apply_rules(node, rules))
 
 
 def get_compute_node_stats(context, use_mean=False, read_suspended=False):
-    allow_nodes = make_zones(context)
+    allow_nodes = get_allowed_hosts(context)
     return db.get_compute_node_stats(context, use_mean=use_mean,
                                      read_suspended=read_suspended,
                                      nodes=allow_nodes)
@@ -73,8 +109,9 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False):
 
 def build_filter_properties(context, chosen_instance, nodes):
     instance = get_instance_object(context, chosen_instance['uuid'])
-    req_spec = utils.build_request_spec(context, {}, [instance])
-    filter_properties = {'context': context}
+    image, ctx = _get_image(instance.get('image_ref'))
+    req_spec = utils.build_request_spec(ctx, image, [instance])
+    filter_properties = {'context': ctx}
     instance_type = req_spec.get('instance_type')
     project_id = req_spec['instance_properties']['project_id']
     instance_resources = chosen_instance['resources']
@@ -110,9 +147,6 @@ def normalize_params(params, k='uuid'):
                         min_values[key] = param[key]
                 else:
                     min_values[key] = param[key]
-    LOG.info(_(max_values))
-    LOG.info(_(min_values))
-    LOG.info(_(params))
     for param in params:
         norm_ins = {}
         for key in param:

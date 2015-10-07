@@ -55,5 +55,5 @@ class BaseBalancer(object):
     def migrate(self, context, instance_uuid, hostname):
         instance = lb_utils.get_instance_object(context,
                                                 instance_uuid)
-        self.compute_api.live_migrate(lb_utils.get_context(), instance,
-                                      False, False, hostname)
+        self.compute_api.live_migrate(lb_utils.get_context(), instance, False,
+                                      False, hostname)

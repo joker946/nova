@@ -26,7 +26,8 @@ class ViewBuilder(common.ViewBuilder):
             "rule": {
                 "id": rule["id"],
                 "type": rule["type"],
-                "value": rule["value"]
+                "value": rule["value"],
+                "allow": rule["allow"]
             },
         }
 
@@ -52,6 +53,6 @@ class ViewBuilder(common.ViewBuilder):
     def _list_view(self, func, request, rules):
         """Provide a view for a list of rules."""
         rule_list = [func(request, rule)["rule"] for rule in rules]
-        rules_dict = dict(rules=rule_list)
+        rules_dict = dict(lb_rules=rule_list)
 
         return rules_dict

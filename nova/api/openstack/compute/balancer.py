@@ -19,45 +19,10 @@ import webob
 from nova import db
 from nova.api.openstack.compute.views import balancer as balancer_views
 from nova.api.openstack import wsgi
-from nova.api.openstack import xmlutil
 from nova.loadbalancer.underload.mean_underload import MeanUnderload
 from nova import exception
 from nova.i18n import _
 from webob import exc
-
-
-def make_flavor(elem, detailed=False):
-    elem.set('id')
-    elem.set('type')
-    elem.set('value')
-
-    xmlutil.make_links(elem, 'links')
-
-
-rule_nsmap = {None: xmlutil.XMLNS_V11, 'atom': xmlutil.XMLNS_ATOM}
-
-
-class RuleTemplate(xmlutil.TemplateBuilder):
-    def construct(self):
-        root = xmlutil.TemplateElement('rule', selector='rule')
-        make_flavor(root, detailed=True)
-        return xmlutil.MasterTemplate(root, 1, nsmap=rule_nsmap)
-
-
-class MinimalRulesTemplate(xmlutil.TemplateBuilder):
-    def construct(self):
-        root = xmlutil.TemplateElement('rules')
-        elem = xmlutil.SubTemplateElement(root, 'rule', selector='rules')
-        make_flavor(elem)
-        return xmlutil.MasterTemplate(root, 1, nsmap=rule_nsmap)
-
-
-class RulesTemplate(xmlutil.TemplateBuilder):
-    def construct(self):
-        root = xmlutil.TemplateElement('rules')
-        elem = xmlutil.SubTemplateElement(root, 'rule', selector='rules')
-        make_flavor(elem, detailed=True)
-        return xmlutil.MasterTemplate(root, 1, nsmap=rule_nsmap)
 
 
 class Controller(wsgi.Controller):
@@ -65,20 +30,17 @@ class Controller(wsgi.Controller):
 
     _view_builder_class = balancer_views.ViewBuilder
 
-    @wsgi.serializers(xml=MinimalRulesTemplate)
     def index(self, req):
         """Return all flavors in brief."""
         rules = self._get_rules(req)
         return self._view_builder.index(req, rules)
 
-    @wsgi.serializers(xml=RulesTemplate)
     def detail(self, req):
         """Return all flavors in detail."""
         limited_flavors = self._get_flavors(req)
         req.cache_db_flavors(limited_flavors)
         return self._view_builder.detail(req, limited_flavors)
 
-    @wsgi.serializers(xml=RuleTemplate)
     def show(self, req, id):
         """Return data about the given rule id."""
         try:
@@ -116,13 +78,13 @@ class Controller(wsgi.Controller):
                 msg = _("allow key should be bool type.")
                 raise exc.HTTPBadRequest(explanation=msg)
             db.lb_rule_create(context, rule)
-            return rule
+            return dict(lb_rules=rule)
 
     @wsgi.action('suspend_host')
     def suspend_host(self, req, body):
         context = req.environ['nova.context']
         host = body['suspend_host']['host']
-        MeanUnderload.suspend_host(context, host)
+        MeanUnderload().suspend_host(context, host)
 
     def _get_rules(self, req):
         """Helper function that returns a list of flavor dicts."""

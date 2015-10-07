@@ -118,6 +118,7 @@ class MeanUnderload(Base):
             context,
             read_suspended='suspending')
         for node in suspended_nodes:
+            LOG.debug('suspending host found')
             active_migrations = objects.migration.MigrationList\
                 .get_in_progress_by_host_and_node(context,
                                                   node['hypervisor_hostname'],
