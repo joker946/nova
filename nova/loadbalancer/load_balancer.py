@@ -122,7 +122,6 @@ class LoadBalancer(manager.Manager):
     def _balancer(self, context):
         make_stats()
         node, nodes, extra_info = self.threshold_class.indicate(context)
-        self.rules(context)
         if node and CONF.loadbalancer.enable_balancer:
             return self.balancer_class.balance(context,
                                                node=node,

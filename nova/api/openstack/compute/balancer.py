@@ -86,6 +86,18 @@ class Controller(wsgi.Controller):
         host = body['suspend_host']['host']
         MeanUnderload().suspend_host(context, host)
 
+    @wsgi.action('unsuspend_host')
+    def unsuspend_host(self, req, body):
+        context = req.environ['nova.context']
+        hypervisor_hostname = body['unsuspend_host']['host']
+        node = db.compute_node_search_by_hypervisor(context,
+                                                    hypervisor_hostname)
+        if node:
+            MeanUnderload().unsuspend_host(context, node)
+        else:
+            msg = 'Requested node not found'
+            raise exc.HTTPBadRequest(explanation=msg)
+
     def _get_rules(self, req):
         """Helper function that returns a list of flavor dicts."""
 

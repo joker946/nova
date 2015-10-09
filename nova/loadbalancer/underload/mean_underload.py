@@ -72,7 +72,7 @@ class MeanUnderload(Base):
                 if self.suspend_host(context, node,
                                      compute_nodes=compute_nodes):
                     return
-        self.unsuspend_host(context, extra_info=extra)
+        self.indicate_unsuspend_host(context, extra_info=extra)
 
     def suspend_host(self, context, node, compute_nodes=None):
         if not compute_nodes:
@@ -92,20 +92,24 @@ class MeanUnderload(Base):
             db.compute_node_update(context, compute_id,
                                    {'suspend_state': 'not suspended'})
 
-    def unsuspend_host(self, context, extra_info=None):
+    def indicate_unsuspend_host(self, context, extra_info=None):
         cpu_mean = extra_info.get('cpu_mean')
         ram_mean = extra_info.get('ram_mean')
         unsuspend_cpu = CONF.loadbalancer_mean_underload.unsuspend_cpu
         unsuspend_ram = CONF.loadbalancer_mean_underload.unsuspend_memory
         if cpu_mean > unsuspend_cpu or ram_mean > unsuspend_ram:
+            #TODO change get_compute_node_stats
             compute_nodes = utils.get_compute_node_stats(
                 context, read_suspended='only')
             for node in compute_nodes:
-                mac_to_wake = node['mac_to_wake']
-                nova_utils.execute('ether-wake', mac_to_wake, run_as_root=True)
-                db.compute_node_update(context, node['compute_id'],
-                                       {'suspend_state': 'not suspended'})
+                self.unsuspend_host(context, node)
                 return
+
+    def unsuspend_host(self, context, node):
+        mac_to_wake = node['mac_to_wake']
+        nova_utils.execute('ether-wake', mac_to_wake, run_as_root=True)
+        db.compute_node_update(context, node['id'],
+                               {'suspend_state': 'not suspended'})
 
     def host_is_empty(self, context, host):
         instances = db.get_instances_stat(context, host)
@@ -129,7 +133,7 @@ class MeanUnderload(Base):
                 return
             else:
                 if self.host_is_empty(context, node['hypervisor_hostname']):
-                    mac = self.compute_rpc.get_host_mac_addr(
+                    mac = self.compute_rpc.prepare_host_for_suspending(
                         context, node['hypervisor_hostname'])
                     db.compute_node_update(context, node['compute_id'],
                                            {'mac_to_wake': mac})
