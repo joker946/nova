@@ -98,8 +98,7 @@ class MeanUnderload(Base):
         unsuspend_cpu = CONF.loadbalancer_mean_underload.unsuspend_cpu
         unsuspend_ram = CONF.loadbalancer_mean_underload.unsuspend_memory
         if cpu_mean > unsuspend_cpu or ram_mean > unsuspend_ram:
-            #TODO change get_compute_node_stats
-            compute_nodes = utils.get_compute_node_stats(
+            compute_nodes = db.compute_node_get_all(
                 context, read_suspended='only')
             for node in compute_nodes:
                 self.unsuspend_host(context, node)

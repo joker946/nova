@@ -182,7 +182,7 @@ def compute_node_get_by_service_id(context, service_id):
 
 
 def compute_node_get_all(context, no_date_fields=False,
-                         hypervisor_hostname=None):
+                         read_suspended=False):
     """Get all computeNodes.
 
     :param context: The security context
@@ -195,7 +195,7 @@ def compute_node_get_all(context, no_date_fields=False,
               including corresponding service
     """
     return IMPL.compute_node_get_all(context, no_date_fields,
-                                     hypervisor_hostname=None)
+                                     read_suspended=read_suspended)
 
 
 def compute_node_search_by_hypervisor(context, hypervisor_match):

@@ -398,9 +398,12 @@ class HostManager(object):
         """
 
         # Get resource usage across the available compute nodes:
-        compute_nodes = db.compute_node_get_all(
-            context,
-            hypervisor_host=hypervisor_hostname)
+        if not hypervisor_hostname:
+            compute_nodes = db.compute_node_get_all(context)
+        else:
+            compute_nodes = db.compute_node_search_by_hypervisor(
+                context,
+                hypervisor_hostname)
         seen_nodes = set()
         for compute in compute_nodes:
             service = compute['service']

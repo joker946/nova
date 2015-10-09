@@ -941,10 +941,10 @@ class ComputeAPI(object):
                 block_device_mapping=block_device_mapping, node=node,
                 limits=limits)
 
-    def get_host_mac_addr(self, ctxt, host):
+    def prepare_host_for_suspending(self, ctxt, host):
         version = '3.0'
         cctxt = self.client.prepare(server=host, version=version)
-        return cctxt.call(ctxt, 'get_host_mac_addr')
+        return cctxt.call(ctxt, 'prepare_host_for_suspending')
 
     def suspend_host(self, ctxt, host):
         version = '3.0'
