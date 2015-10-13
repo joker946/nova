@@ -15,6 +15,7 @@
 
 from oslo.config import cfg
 
+from nova.api.openstack import common
 from nova.compute import api as compute_api
 from nova.loadbalancer import utils as lb_utils
 from nova.openstack.common import importutils
@@ -52,8 +53,20 @@ class BaseBalancer(object):
                                                             filter_properties)
         return filtered, filter_properties
 
-    def migrate(self, context, instance_uuid, hostname):
-        instance = lb_utils.get_instance_object(context,
-                                                instance_uuid)
-        self.compute_api.live_migrate(lb_utils.get_context(), instance, False,
-                                      False, hostname)
+    def migrate(self, context, instance_uuid, hostname=None,
+                cold_migration=None):
+        if not cold_migration:
+            instance = lb_utils.get_instance_object(context,
+                                                    instance_uuid)
+            self.compute_api.live_migrate(lb_utils.get_context(), instance,
+                                          False, False, hostname)
+        else:
+            instance = common.get_instance(self.compute_api,
+                                           lb_utils.get_context(),
+                                           instance_uuid, want_objects=True)
+            self.compute_api.resize(lb_utils.get_context(), instance)
+
+    def confirm_migration(self, context, instance_uuid):
+        instance = self.compute_api.get(lb_utils.get_context(), instance_uuid,
+                                        want_objects=True)
+        self.compute_api.confirm_resize(lb_utils.get_context(), instance)

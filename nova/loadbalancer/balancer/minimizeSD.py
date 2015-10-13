@@ -19,7 +19,7 @@ from nova.loadbalancer import utils as lb_utils
 from nova.loadbalancer.balancer.base import BaseBalancer
 from nova.i18n import _
 from nova.openstack.common import log as logging
-
+from nova.objects.instance import InstanceList
 from copy import deepcopy
 from oslo.config import cfg
 
@@ -66,13 +66,22 @@ class MinimizeSD(BaseBalancer):
     def migrate_all_vms_from_host(self, context, host):
         compute_nodes = lb_utils.get_compute_node_stats(context,
                                                         read_suspended=True)
-        instances = db.get_instances_stat(context, host)
-        if not instances:
+        instances_stat = db.get_instances_stat(context, host)
+        all_instances = InstanceList.get_by_filters(
+            context,
+            {'host': host, 'deleted': False})
+        if not all_instances:
             return True
-        host_loads = lb_utils.fill_compute_stats(instances, compute_nodes)
+        host_loads = lb_utils.fill_compute_stats(instances_stat, compute_nodes)
         migrated = False
         vm_host_map = []
-        for instance in instances:
+        shutdown_instances = InstanceList.get_by_filters(
+            context,
+            {'host': host, 'vm_state': 'stopped', 'deleted': False})
+        for instance in shutdown_instances:
+            self.migrate(context, instance['uuid'], cold_migration=True)
+            migrated = True
+        for instance in instances_stat:
             for node in compute_nodes:
                 h_hostname = node['hypervisor_hostname']
                 # Source host shouldn't be use.
@@ -83,7 +92,7 @@ class MinimizeSD(BaseBalancer):
                                         'vm': instance['instance_uuid'],
                                         'sd': sd})
         vm_host_map = sorted(vm_host_map, key=lambda x: x['sd']['total_sd'])
-        for instance in instances:
+        for instance in instances_stat:
             vm_hosts = list(
                 filter(lambda x: x['vm'] == instance['instance_uuid'],
                        vm_host_map))
@@ -98,7 +107,7 @@ class MinimizeSD(BaseBalancer):
                     if not filtered[0]:
                         continue
                     self.migrate(context, instance['instance_uuid'],
-                                 vms['host'])
+                                 hostname=vms['host'])
                     migrated = True
                     break
         if migrated:

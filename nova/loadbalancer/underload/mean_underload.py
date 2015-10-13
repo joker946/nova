@@ -19,8 +19,9 @@ from nova import utils as nova_utils
 from nova.loadbalancer.underload.base import Base
 from nova.loadbalancer.balancer.minimizeSD import MinimizeSD
 from nova.loadbalancer import utils
+from nova.objects.instance import InstanceList
 from nova.openstack.common import log as logging
-from nova.compute import rpcapi as compute_api
+
 
 from oslo.config import cfg
 
@@ -47,7 +48,6 @@ CONF.register_opts(lb_opts, 'loadbalancer_mean_underload')
 
 class MeanUnderload(Base):
     def __init__(self):
-        self.compute_rpc = compute_api.ComputeAPI()
         self.minimizeSD = MinimizeSD()
 
     def indicate(self, context, **kwargs):
@@ -56,7 +56,7 @@ class MeanUnderload(Base):
         memory_th = CONF.loadbalancer_mean_underload.threshold_memory
         compute_nodes = utils.get_compute_node_stats(context, use_mean=True)
         if len(compute_nodes) <= 1:
-            self.unsuspend_host(context, extra_info=extra)
+            self.indicate_unsuspend_host(context, extra_info=extra)
             return
         instances = []
         for node in compute_nodes:
@@ -105,14 +105,20 @@ class MeanUnderload(Base):
                 return
 
     def unsuspend_host(self, context, node):
+        LOG.debug('unsuspend_host called')
         mac_to_wake = node['mac_to_wake']
         nova_utils.execute('ether-wake', mac_to_wake, run_as_root=True)
         db.compute_node_update(context, node['id'],
                                {'suspend_state': 'not suspended'})
 
     def host_is_empty(self, context, host):
-        instances = db.get_instances_stat(context, host)
-        if not instances:
+        alive_instances = InstanceList.get_by_filters(
+            context,
+            {'host': host, 'vm_state': 'active', 'deleted': False})
+        shutdown_instances = InstanceList.get_by_filters(
+            context,
+            {'host': host, 'vm_state': 'stopped', 'deleted': False})
+        if not alive_instances and not shutdown_instances:
             return True
         return False
 
@@ -127,8 +133,12 @@ class MeanUnderload(Base):
                                                   node['hypervisor_hostname'],
                                                   node['hypervisor_hostname'])
             if active_migrations:
+                for migration in active_migrations:
+                    if migration['status'] == 'finished':
+                        self.minimizeSD.confirm_migration(
+                            context,
+                            migration['instance_uuid'])
                 LOG.debug('There is some migrations that are in active state')
-                # TODO (alexchadin) Make checking that all vms have been migrated.
                 return
             else:
                 if self.host_is_empty(context, node['hypervisor_hostname']):
