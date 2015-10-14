@@ -16,12 +16,13 @@
 
 import webob
 
-from nova import db
 from nova.api.openstack.compute.views import balancer as balancer_views
 from nova.api.openstack import wsgi
-from nova.loadbalancer.underload.mean_underload import MeanUnderload
+from nova import db
 from nova import exception
+from nova.loadbalancer.underload.mean_underload import MeanUnderload
 from nova.i18n import _
+from nova.objects.compute_node import ComputeNodeList
 from webob import exc
 
 
@@ -84,16 +85,18 @@ class Controller(wsgi.Controller):
     def suspend_host(self, req, body):
         context = req.environ['nova.context']
         host = body['suspend_host']['host']
-        MeanUnderload().suspend_host(context, host)
+        try:
+            MeanUnderload().suspend_host(context, host)
+        except exception.ComputeHostNotFound, e:
+            raise exc.HTTPBadRequest(explanation=e.format_message())
 
     @wsgi.action('unsuspend_host')
     def unsuspend_host(self, req, body):
         context = req.environ['nova.context']
         hypervisor_hostname = body['unsuspend_host']['host']
-        node = db.compute_node_search_by_hypervisor(context,
-                                                    hypervisor_hostname)
+        node = ComputeNodeList.get_by_hypervisor(context, hypervisor_hostname)
         if node:
-            MeanUnderload().unsuspend_host(context, node)
+            MeanUnderload().unsuspend_host(context, node[0])
         else:
             msg = 'Requested node not found'
             raise exc.HTTPBadRequest(explanation=msg)

@@ -52,6 +52,8 @@ class ComputeNode(base.NovaPersistentObject, base.NovaObject):
         'stats': fields.DictOfNullableStringsField(nullable=True),
         'host_ip': fields.IPAddressField(nullable=True),
         'numa_topology': fields.StringField(nullable=True),
+        'suspend_state': fields.StringField(nullable=True),
+        'mac_to_wake': fields.StringField(nullable=True)
         }
 
     def obj_make_compatible(self, primitive, target_version):

@@ -14,7 +14,9 @@
 #    under the License.
 
 from nova import db
+from nova import exception
 from nova import objects
+from nova.objects.compute_node import ComputeNodeList
 from nova import utils as nova_utils
 from nova.loadbalancer.underload.base import Base
 from nova.loadbalancer.balancer.minimizeSD import MinimizeSD
@@ -69,27 +71,24 @@ class MeanUnderload(Base):
             memory = host_loads[node]['mem']
             cpu = host_loads[node]['cpu']
             if (cpu < cpu_th) or (memory < memory_th):
-                if self.suspend_host(context, node,
-                                     compute_nodes=compute_nodes):
+                if self.suspend_host(context, node):
                     return
         self.indicate_unsuspend_host(context, extra_info=extra)
 
-    def suspend_host(self, context, node, compute_nodes=None):
-        if not compute_nodes:
-            compute_nodes = utils.get_compute_node_stats(context,
-                                                         use_mean=True)
-        compute_id = filter(lambda x: x['hypervisor_hostname'] == node,
-                            compute_nodes)[0]['compute_id']
+    def suspend_host(self, context, node):
+        compute_node = ComputeNodeList.get_by_hypervisor(context, node)
+        if not compute_node:
+            raise exception.ComputeHostNotFound(host=node)
         # Underload is needed.
         LOG.debug('underload is needed')
-        db.compute_node_update(context, compute_id,
+        db.compute_node_update(context, compute_node[0]['id'],
                                {'suspend_state': 'suspending'})
         migrated = self.minimizeSD.migrate_all_vms_from_host(context,
                                                              node)
         if migrated:
             return True
         else:
-            db.compute_node_update(context, compute_id,
+            db.compute_node_update(context, compute_node[0]['id'],
                                    {'suspend_state': 'not suspended'})
 
     def indicate_unsuspend_host(self, context, extra_info=None):
