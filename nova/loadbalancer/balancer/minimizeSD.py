@@ -79,8 +79,10 @@ class MinimizeSD(BaseBalancer):
             context,
             {'host': host, 'vm_state': 'stopped', 'deleted': False})
         for instance in shutdown_instances:
-            self.migrate(context, instance['uuid'], cold_migration=True)
-            migrated = True
+            if self.migrate(context,
+                            instance['uuid'],
+                            cold_migration=True):
+                migrated = True
         for instance in instances_stat:
             for node in compute_nodes:
                 h_hostname = node['hypervisor_hostname']

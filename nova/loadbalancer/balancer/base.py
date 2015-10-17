@@ -68,7 +68,8 @@ class BaseBalancer(object):
             try:
                 self.compute_api.resize(lb_utils.get_context(), instance)
             except exception.NoValidHost:
-                pass
+                return False
+            return True
 
     def confirm_migration(self, context, instance_uuid):
         instance = self.compute_api.get(lb_utils.get_context(), instance_uuid,
