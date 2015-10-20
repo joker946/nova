@@ -854,6 +854,14 @@ class ComputeHostNotFound(HostNotFound):
     msg_fmt = _("Compute host %(host)s could not be found.")
 
 
+class ComputeHostForbiddenByRule(NovaException):
+    msg_fmt = _("Compute host %(host)s has been forbidden by rules.")
+
+
+class ComputeHostWrongState(NovaException):
+    msg_fmt = _("Compute host %(host)s is in wrong suspend state.")
+
+
 class ComputeHostNotCreated(HostNotFound):
     msg_fmt = _("Compute host %(name)s needs to be created first"
                 " before updating.")

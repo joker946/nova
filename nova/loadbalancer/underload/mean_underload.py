@@ -76,9 +76,13 @@ class MeanUnderload(Base):
         self._indicate_unsuspend_host(context, extra_info=extra)
 
     def suspend_host(self, context, node):
+        if node not in utils.get_allowed_hosts(context):
+            raise exception.ComputeHostForbiddenByRule(host=node)
         compute_node = ComputeNodeList.get_by_hypervisor(context, node)
         if not compute_node:
             raise exception.ComputeHostNotFound(host=node)
+        if compute_node[0]['suspend_state'] != 'not suspended':
+            raise exception.ComputeHostWrongState(host=node)
         # Underload is needed.
         LOG.debug('underload is needed')
         db.compute_node_update(context, compute_node[0]['id'],
@@ -104,6 +108,9 @@ class MeanUnderload(Base):
                 return
 
     def unsuspend_host(self, context, node):
+        if node['suspend_state'] != 'suspended':
+            raise exception.ComputeHostWrongState(
+                host=node['hypervisor_hostname'])
         LOG.debug('unsuspend_host called')
         mac_to_wake = node['mac_to_wake']
         nova_utils.execute('ether-wake', mac_to_wake, run_as_root=True)

@@ -87,7 +87,9 @@ class Controller(wsgi.Controller):
         host = body['suspend_host']['host']
         try:
             MeanUnderload().suspend_host(context, host)
-        except exception.ComputeHostNotFound, e:
+        except (exception.ComputeHostNotFound,
+                exception.ComputeHostWrongState,
+                exception.ComputeHostForbiddenByRule) as e:
             raise exc.HTTPBadRequest(explanation=e.format_message())
 
     @wsgi.action('unsuspend_host')
@@ -96,7 +98,10 @@ class Controller(wsgi.Controller):
         hypervisor_hostname = body['unsuspend_host']['host']
         node = ComputeNodeList.get_by_hypervisor(context, hypervisor_hostname)
         if node:
-            MeanUnderload().unsuspend_host(context, node[0])
+            try:
+                MeanUnderload().unsuspend_host(context, node[0])
+            except exception.ComputeHostWrongState as e:
+                raise exc.HTTPBadRequest(explanation=e.format_message())
         else:
             msg = 'Requested node not found'
             raise exc.HTTPBadRequest(explanation=msg)

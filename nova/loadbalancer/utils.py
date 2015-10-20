@@ -86,7 +86,7 @@ def check_string(string, template):
     return False
 
 
-def apply_rules(node, rules):
+def _apply_rules(node, rules):
     result = True
     for rule in rules:
         if check_string(node.get(rule['type']), rule['value']):
@@ -97,7 +97,7 @@ def apply_rules(node, rules):
 def get_allowed_hosts(context):
     rules = db.lb_rule_get_all(context)
     nodes = db.get_compute_nodes_ha(context)
-    return set(node['host'] for node in nodes if apply_rules(node, rules))
+    return set(node['host'] for node in nodes if _apply_rules(node, rules))
 
 
 def get_compute_node_stats(context, use_mean=False, read_suspended=False):
