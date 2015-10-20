@@ -28,6 +28,7 @@ from nova.api.openstack.compute import image_metadata
 from nova.api.openstack.compute import images
 from nova.api.openstack.compute import ips
 from nova.api.openstack.compute import balancer
+from nova.api.openstack.compute import loadbalancer
 from nova.api.openstack.compute import limits
 from nova.api.openstack.compute import plugins
 from nova.api.openstack.compute import server_metadata
@@ -99,11 +100,16 @@ class APIRouter(nova.api.openstack.APIRouter):
 
         if init_only is None or 'lbrules' in init_only:
             self.resources['lbrules'] = balancer.create_resource()
-            mapper.resource("lbrule", "lbrules",
+            mapper.resource("lbrule", "/loadbalancer/rules",
                             controller=self.resources['lbrules'],
-                            collection={'detail': 'GET',
-                                        'action': 'POST',
-                                        'nodes': 'GET'})
+                            collection={'detail': 'GET'})
+
+        if init_only is None or 'loadbalancer' in init_only:
+            self.resources['loadbalancer'] = loadbalancer.create_resource()
+            mapper.resource('loadbalancer', 'loadbalancer',
+                            controller=self.resources['loadbalancer'],
+                            collection={'action': 'POST',
+                                        'detail': 'GET'})
 
         if init_only is None or 'image_metadata' in init_only:
             self.resources['image_metadata'] = image_metadata.create_resource()

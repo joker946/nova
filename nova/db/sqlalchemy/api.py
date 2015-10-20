@@ -690,7 +690,8 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False,
             func.avg(models.ComputeNodeStats.cpu_used_percent),
             models.ComputeNode.hypervisor_hostname,
             models.ComputeNode.vcpus,
-            models.ComputeNode.mac_to_wake
+            models.ComputeNode.mac_to_wake,
+            models.ComputeNode.suspend_state
             )\
             .join(models.ComputeNode,
                   models.ComputeNodeStats.compute_id == models.ComputeNode.id)\
@@ -707,7 +708,8 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False,
                             models.ComputeNodeStats.cpu_used_percent,
                             models.ComputeNode.hypervisor_hostname,
                             models.ComputeNode.vcpus,
-                            models.ComputeNode.mac_to_wake)\
+                            models.ComputeNode.mac_to_wake,
+                            models.ComputeNode.suspend_state)\
             .join((sub, _and))\
             .join(models.ComputeNode,
                   models.ComputeNodeStats.compute_id == models.ComputeNode.id)\
@@ -725,11 +727,12 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False,
                            models.ComputeNodeStats.memory_total,
                            models.ComputeNode.hypervisor_hostname,
                            models.ComputeNode.vcpus,
-                           models.ComputeNode.mac_to_wake)
+                           models.ComputeNode.mac_to_wake,
+                           models.ComputeNode.suspend_state)
     res = res.all()
     fields = ('compute_id', 'memory_used', 'memory_total',
               'cpu_used_percent', 'hypervisor_hostname',
-              'vcpus', 'mac_to_wake')
+              'vcpus', 'mac_to_wake', 'suspend_state')
     compute_nodes = []
     for x in res:
         compute_nodes.append(dict((field, x[idx])
