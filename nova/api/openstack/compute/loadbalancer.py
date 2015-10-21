@@ -14,14 +14,10 @@
 #    under the License.
 
 
-import webob
-
 from nova.api.openstack.compute.views import loadbalancer as balancer_views
 from nova.api.openstack import wsgi
-from nova import db
 from nova import exception
-from nova.loadbalancer.underload.mean_underload import MeanUnderload
-from nova.i18n import _
+from nova.loadbalancer import manager
 from nova.objects.compute_node import ComputeNodeList
 from webob import exc
 
@@ -47,7 +43,7 @@ class Controller(wsgi.Controller):
         context = req.environ['nova.context']
         host = body['suspend_host']['host']
         try:
-            MeanUnderload().suspend_host(context, host)
+            manager.LoadBalancer().suspend_host(context, host)
         except (exception.ComputeHostNotFound,
                 exception.ComputeHostWrongState,
                 exception.ComputeHostForbiddenByRule) as e:
@@ -60,7 +56,7 @@ class Controller(wsgi.Controller):
         node = ComputeNodeList.get_by_hypervisor(context, hypervisor_hostname)
         if node:
             try:
-                MeanUnderload().unsuspend_host(context, node[0])
+                manager.LoadBalancer().unsuspend_host(context, node[0])
             except exception.ComputeHostWrongState as e:
                 raise exc.HTTPBadRequest(explanation=e.format_message())
         else:
@@ -71,7 +67,7 @@ class Controller(wsgi.Controller):
         """Helper function that returns a list of nodes dicts."""
 
         context = req.environ['nova.context']
-        nodes = db.get_compute_node_stats(context)
+        nodes = manager.LoadBalancer().get_nodes(context)
         return nodes
 
 

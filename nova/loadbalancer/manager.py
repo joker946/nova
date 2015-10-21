@@ -141,3 +141,27 @@ class LoadBalancer(manager.Manager):
     @periodic_task.periodic_task
     def check_is_all_vms_migrated(self, context):
         return self.underload_class.check_is_all_vms_migrated(context)
+
+    def suspend_host(self, context, host):
+        try:
+            return self.underload_class.suspend_host(context, host)
+        except Exception, e:
+            raise e
+
+    def unsuspend_host(self, context, node):
+        try:
+            return self.underload_class.unsuspend_host(context, node)
+        except Exception, e:
+            raise e
+
+    def get_nodes(self, context):
+        return db.get_compute_node_stats(context)
+
+    def lb_rule_create(self, context, rule):
+        db.lb_rule_create(context, rule)
+
+    def lb_rule_delete(self, context, id):
+        db.lb_rule_delete(context, id)
+
+    def lb_rule_get_all(self, context):
+        return db.lb_rule_get_all(context)

@@ -27,7 +27,7 @@ from nova.api.openstack.compute import flavors
 from nova.api.openstack.compute import image_metadata
 from nova.api.openstack.compute import images
 from nova.api.openstack.compute import ips
-from nova.api.openstack.compute import balancer
+from nova.api.openstack.compute import lb_rules
 from nova.api.openstack.compute import loadbalancer
 from nova.api.openstack.compute import limits
 from nova.api.openstack.compute import plugins
@@ -99,7 +99,7 @@ class APIRouter(nova.api.openstack.APIRouter):
                             member={'action': 'POST'})
 
         if init_only is None or 'lbrules' in init_only:
-            self.resources['lbrules'] = balancer.create_resource()
+            self.resources['lbrules'] = lb_rules.create_resource()
             mapper.resource("lbrule", "/loadbalancer/rules",
                             controller=self.resources['lbrules'],
                             collection={'detail': 'GET'})

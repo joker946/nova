@@ -18,11 +18,9 @@ import webob
 
 from nova.api.openstack.compute.views import lb_rules as balancer_views
 from nova.api.openstack import wsgi
-from nova import db
 from nova import exception
-from nova.loadbalancer.underload.mean_underload import MeanUnderload
+from nova.loadbalancer import manager
 from nova.i18n import _
-from nova.objects.compute_node import ComputeNodeList
 from webob import exc
 
 
@@ -58,7 +56,7 @@ class Controller(wsgi.Controller):
         context = req.environ['nova.context']
         """Destroys a server."""
         try:
-            db.lb_rule_delete(context, id)
+            manager.LoadBalancer().lb_rule_delete(context, id)
         except exception.NotFound:
             msg = _("Rule could not be found")
             raise exc.HTTPNotFound(explanation=msg)
@@ -78,14 +76,14 @@ class Controller(wsgi.Controller):
             if not isinstance(rule['allow'], bool):
                 msg = _("allow key should be bool type.")
                 raise exc.HTTPBadRequest(explanation=msg)
-            db.lb_rule_create(context, rule)
+            manager.LoadBalancer().lb_rule_create(context, rule)
             return dict(lb_rules=rule)
 
     def _get_rules(self, req):
         """Helper function that returns a list of rule dicts."""
 
         context = req.environ['nova.context']
-        rules = db.lb_rule_get_all(context)
+        rules = manager.LoadBalancer().lb_rule_get_all(context)
         return rules
 
 
