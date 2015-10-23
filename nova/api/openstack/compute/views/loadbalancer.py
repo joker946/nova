@@ -27,7 +27,8 @@ class ViewBuilder(common.ViewBuilder):
                 "hypervisor_hostname": node["hypervisor_hostname"],
                 "cpu_used_percent": node["cpu_used_percent"],
                 "memory_total": node["memory_total"],
-                "memory_used": node["memory_used"],
+                "memory_used_percent": float(node["memory_used"])/float(
+                    node["memory_total"])*100.00,
                 "suspend_state": node["suspend_state"],
                 "mac_to_wake": node["mac_to_wake"],
                 "vcpus": node["vcpus"]

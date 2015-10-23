@@ -47,6 +47,10 @@ class Standart_Deviation(base.Base):
         cpu_threshold = CONF.loadbalancer_standart_deviation.threshold_cpu
         mem_threshold = CONF.loadbalancer_standart_deviation.threshold_memory
         compute_nodes = utils.get_compute_node_stats(context)
+        if not compute_nodes:
+            LOG.debug("There is not any compute node stats in database. "
+                      "Skipping indicating.")
+            return
         instances = []
         # TODO: Make only one query that returns all instances placed on active
         # hosts.

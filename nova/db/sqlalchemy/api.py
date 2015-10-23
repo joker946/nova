@@ -756,14 +756,13 @@ def get_compute_nodes_ha(context):
         .filter(and_(models.AggregateHost.deleted == 0,
                 or_(models.AggregateMetadata.key == 'availability_zone',
                     models.AggregateMetadata.key == None))).all()
-    LOG.debug(node_ha)
     nodes_ha = []
     for node in node_ha:
         nodes_ha.append({'host': node[0], 'ha': node[1],
-                         'az': node[2], 'passes': True})
+                         'az': node[2]})
     for node in nodes:
         if not any([x['host'] == node[0] for x in nodes_ha]):
-            nodes_ha.append({'host': node[0], 'passes': True})
+            nodes_ha.append({'host': node[0]})
     return nodes_ha
 
 

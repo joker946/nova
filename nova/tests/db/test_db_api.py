@@ -5674,6 +5674,121 @@ class S3ImageTestCase(test.TestCase):
                           self.ctxt, uuidutils.generate_uuid())
 
 
+class LoadBalancerRulesTestCase(test.TestCase, ModelsObjectComparatorMixin):
+
+    _ignored_keys = ['id', 'deleted', 'deleted_at', 'created_at', 'updated_at']
+
+    def setUp(self):
+        super(LoadBalancerRulesTestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+        self.rule_dict = dict(type='host', value='host', allow=True)
+        self.item = db.lb_rule_create(self.ctxt, self.rule_dict)
+
+    def test_lb_rule_create(self):
+        self._assertEqualObjects(self.rule_dict, self.item,
+                                 ignored_keys=self._ignored_keys)
+
+    def test_lb_rule_get_all(self):
+        rules = db.lb_rule_get_all(self.ctxt)
+        self.assertEqual(1, len(rules))
+        rule = rules[0]
+        self._assertEqualObjects(self.rule_dict, rule,
+                                 ignored_keys=self._ignored_keys)
+
+    def test_lb_rule_delete(self):
+        rule_id = self.item['id']
+        db.lb_rule_delete(self.ctxt, rule_id)
+        rules = db.lb_rule_get_all(self.ctxt)
+        self.assertEqual(len(rules), 0)
+
+
+class LoadBalancerTestCase(test.TestCase, ModelsObjectComparatorMixin):
+
+    _ignored_keys = ['id', 'deleted', 'deleted_at', 'created_at', 'updated_at']
+
+    def setUp(self):
+        super(LoadBalancerTestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+        self.service_dict = dict(host='host1', binary='nova-compute',
+                                 topic=CONF.compute_topic, report_count=1,
+                                 disabled=False)
+        self.service = db.service_create(self.ctxt, self.service_dict)
+        self.compute_node_dict = dict(vcpus=2, memory_mb=1024, local_gb=2048,
+                                      vcpus_used=0, memory_mb_used=0,
+                                      local_gb_used=0, free_ram_mb=1024,
+                                      free_disk_gb=2048, hypervisor_type="xen",
+                                      hypervisor_version=1, cpu_info="",
+                                      running_vms=0, current_workload=0,
+                                      service_id=self.service['id'],
+                                      disk_available_least=100,
+                                      hypervisor_hostname='abracadabra104',
+                                      host_ip='127.0.0.1',
+                                      supported_instances='',
+                                      pci_stats='',
+                                      metrics='',
+                                      extra_resources='',
+                                      stats='', numa_topology='',
+                                      suspend_state='not suspended',
+                                      mac_to_wake='')
+        self.node = db.compute_node_create(self.ctxt, self.compute_node_dict)
+        self.compute_node_stats = dict(compute_id=self.node['id'],
+                                       memory_total=self.node['memory_mb'],
+                                       cpu_used_percent=15,
+                                       memory_used=self.node['free_ram_mb'])
+        self.node_stats = db.compute_node_stats_upsert(self.ctxt, dict(
+            node=self.compute_node_stats, instances=[]))
+
+    def test_get_compute_node_stats(self):
+        self.node_stats.update(dict(
+            hypervisor_hostname=self.compute_node_dict['hypervisor_hostname'],
+            vcpus=self.compute_node_dict['vcpus'],
+            suspend_state=self.compute_node_dict['suspend_state'],
+            mac_to_wake=self.compute_node_dict['mac_to_wake']))
+        nodes_stats = db.get_compute_node_stats(self.ctxt)
+        self.assertEqual(len(nodes_stats), 1)
+        node_stats = nodes_stats[0]
+        self._assertEqualObjects(self.node_stats, node_stats,
+                                 ignored_keys=self._ignored_keys)
+
+    def test_get_compute_node_stats_using_mean(self):
+        compute_node_stats2 = copy.copy(self.compute_node_stats)
+        compute_node_stats2.update(dict(cpu_used_percent=55))
+        db.compute_node_stats_upsert(self.ctxt, dict(
+            node=compute_node_stats2,
+            instances=[]))
+        nodes_stats = db.get_compute_node_stats(self.ctxt, use_mean=True)
+        self.assertEqual(len(nodes_stats), 1)
+        self.assertEqual(nodes_stats[0]['cpu_used_percent'], 35)
+
+    def test_get_compute_node_stats_suspending_only(self):
+        compute_node_dict2 = copy.copy(self.compute_node_dict)
+        compute_node_dict2.update(dict(hypervisor_hostname='abra2',
+                                       suspend_state='suspending'))
+        node2 = db.compute_node_create(self.ctxt, compute_node_dict2)
+        db.compute_node_stats_upsert(self.ctxt, dict(
+            node=dict(compute_id=node2['id'],
+                      memory_total=node2['memory_mb'],
+                      cpu_used_percent=15,
+                      memory_used=node2['free_ram_mb']),
+            instances=[]))
+        susp_nodes_stats = db.get_compute_node_stats(
+            self.ctxt,
+            read_suspended='suspending')
+        self.assertEqual(len(susp_nodes_stats), 1)
+        self.assertEqual(susp_nodes_stats[0]['hypervisor_hostname'],
+                         compute_node_dict2['hypervisor_hostname'])
+
+    def test_get_compute_nodes_ha(self):
+        _create_aggregate_with_hosts(context=self.ctxt, values={'name': 'agg'},
+                                     hosts=['compute1.students.dev'])
+        ha = {'host': 'compute1.students.dev', 'ha': 'agg'}
+        hosts_ha = db.get_compute_nodes_ha(self.ctxt)
+        self.assertEqual(len(hosts_ha), 2)
+        for ha in hosts_ha:
+            if ha['host'] == 'compute1.students.dev':
+                self.assertEqual(hosts_ha[0], ha)
+
+
 class ComputeNodeTestCase(test.TestCase, ModelsObjectComparatorMixin):
 
     _ignored_keys = ['id', 'deleted', 'deleted_at', 'created_at', 'updated_at']
@@ -5699,7 +5814,9 @@ class ComputeNodeTestCase(test.TestCase, ModelsObjectComparatorMixin):
                                  pci_stats='',
                                  metrics='',
                                  extra_resources='',
-                                 stats='', numa_topology='')
+                                 stats='', numa_topology='',
+                                 suspend_state='not suspended',
+                                 mac_to_wake='')
         # add some random stats
         self.stats = dict(num_instances=3, num_proj_12345=2,
                      num_proj_23456=2, num_vm_building=3)
@@ -6561,6 +6678,8 @@ class ArchiveTestCase(test.TestCase):
     def test_shadow_tables(self):
         metadata = MetaData(bind=self.engine)
         metadata.reflect()
+        lb_tables = ["loadbalancer_rules", "instance_stats",
+                         "compute_node_stats"]
         for table_name in metadata.tables:
             # NOTE(rpodolyaka): migration 209 introduced a few new tables,
             #                   which don't have shadow tables and it's
@@ -6570,6 +6689,8 @@ class ArchiveTestCase(test.TestCase):
 
             if table_name.startswith("shadow_"):
                 self.assertIn(table_name[7:], metadata.tables)
+                continue
+            if table_name in lb_tables:
                 continue
             self.assertTrue(db_utils.check_shadow_table(self.engine,
                                                         table_name))
