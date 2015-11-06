@@ -18,6 +18,7 @@ import datetime
 from oslo.config import cfg
 from nova import db
 from nova import manager
+from nova.objects.compute_node import ComputeNodeList
 from nova.openstack.common import log as logging
 from nova.openstack.common import periodic_task
 from stevedore import driver
@@ -155,7 +156,18 @@ class LoadBalancer(manager.Manager):
             raise e
 
     def get_nodes(self, context):
-        return db.get_compute_node_stats(context)
+        compute_nodes = ComputeNodeList.get_all(context)
+        stats = db.get_compute_node_stats(context)
+        LOG.debug(compute_nodes)
+        for node in compute_nodes:
+            if not any(node.hypervisor_hostname == x['hypervisor_hostname']
+                       for x in stats):
+                stats.append(dict(hypervisor_hostname=node.hypervisor_hostname,
+                                  suspend_state=node.suspend_state,
+                                  mac_to_wake=node.mac_to_wake,
+                                  memory_total=node.memory_mb, memory_used=0,
+                                  vcpus=node.vcpus, cpu_used_percent=0))
+        return stats
 
     def lb_rule_create(self, context, rule):
         db.lb_rule_create(context, rule)
