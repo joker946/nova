@@ -97,11 +97,14 @@ def _apply_rules(node, rules):
 def get_allowed_hosts(context):
     rules = db.lb_rule_get_all(context)
     nodes = db.get_compute_nodes_ha(context)
-    return set(node['host'] for node in nodes if _apply_rules(node, rules))
+    return list(node['host'] for node in nodes if _apply_rules(node, rules))
 
 
-def get_compute_node_stats(context, use_mean=False, read_suspended=False):
+def get_compute_node_stats(context, use_mean=False, read_suspended=False,
+                           include_hosts=[]):
     allow_nodes = get_allowed_hosts(context)
+    if include_hosts:
+        allow_nodes.extend(include_hosts)
     return db.get_compute_node_stats(context, use_mean=use_mean,
                                      read_suspended=read_suspended,
                                      nodes=allow_nodes)

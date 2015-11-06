@@ -65,7 +65,8 @@ class MinimizeSD(BaseBalancer):
 
     def migrate_all_vms_from_host(self, context, host):
         compute_nodes = lb_utils.get_compute_node_stats(context,
-                                                        read_suspended=True)
+                                                        read_suspended=True,
+                                                        include_hosts=[host])
         instances_stat = db.get_instances_stat(context, host)
         all_instances = InstanceList.get_by_filters(
             context,

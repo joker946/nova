@@ -5702,7 +5702,7 @@ class LoadBalancerRulesTestCase(test.TestCase, ModelsObjectComparatorMixin):
         self.assertEqual(len(rules), 0)
 
 
-class LoadBalancerTestCase(test.TestCase, ModelsObjectComparatorMixin):
+class LoadBalancerTestCase(DbTestCase, ModelsObjectComparatorMixin):
 
     _ignored_keys = ['id', 'deleted', 'deleted_at', 'created_at', 'updated_at']
 
@@ -5730,13 +5730,15 @@ class LoadBalancerTestCase(test.TestCase, ModelsObjectComparatorMixin):
                                       stats='', numa_topology='',
                                       suspend_state='not suspended',
                                       mac_to_wake='')
+        self.instance_dict = dict(libvirt_id=1, instance_uuid='xxx',
+                                  cpu_time=123123123, mem=512)
         self.node = db.compute_node_create(self.ctxt, self.compute_node_dict)
         self.compute_node_stats = dict(compute_id=self.node['id'],
                                        memory_total=self.node['memory_mb'],
                                        cpu_used_percent=15,
                                        memory_used=self.node['free_ram_mb'])
         self.node_stats = db.compute_node_stats_upsert(self.ctxt, dict(
-            node=self.compute_node_stats, instances=[]))
+            node=self.compute_node_stats, instances=[self.instance_dict]))
 
     def test_get_compute_node_stats(self):
         self.node_stats.update(dict(
@@ -5787,6 +5789,13 @@ class LoadBalancerTestCase(test.TestCase, ModelsObjectComparatorMixin):
         for ha in hosts_ha:
             if ha['host'] == 'compute1.students.dev':
                 self.assertEqual(hosts_ha[0], ha)
+
+    def test_get_instances_stat(self):
+        instance = self.create_instance_with_args(uuid='xxx',
+                                                  host='abracadabra104',
+                                                  vm_state='active')
+        instances_stat = db.get_instances_stat(self.ctxt, instance['host'])
+        self.assertEqual(len(instances_stat), 1)
 
 
 class ComputeNodeTestCase(test.TestCase, ModelsObjectComparatorMixin):
