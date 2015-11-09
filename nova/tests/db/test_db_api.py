@@ -5728,7 +5728,7 @@ class LoadBalancerTestCase(DbTestCase, ModelsObjectComparatorMixin):
                                       metrics='',
                                       extra_resources='',
                                       stats='', numa_topology='',
-                                      suspend_state='not suspended',
+                                      suspend_state='active',
                                       mac_to_wake='')
         self.instance_dict = dict(libvirt_id=1, instance_uuid='xxx',
                                   cpu_time=123123123, mem=512)
@@ -5824,7 +5824,7 @@ class ComputeNodeTestCase(test.TestCase, ModelsObjectComparatorMixin):
                                  metrics='',
                                  extra_resources='',
                                  stats='', numa_topology='',
-                                 suspend_state='not suspended',
+                                 suspend_state='active',
                                  mac_to_wake='')
         # add some random stats
         self.stats = dict(num_instances=3, num_proj_12345=2,

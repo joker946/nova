@@ -715,7 +715,7 @@ def get_compute_node_stats(context, use_mean=False, read_suspended=False,
                   models.ComputeNodeStats.compute_id == models.ComputeNode.id)\
             .filter(models.ComputeNode.deleted == 0)
     if not read_suspended:
-        res = res.filter(models.ComputeNode.suspend_state == "not suspended")
+        res = res.filter(models.ComputeNode.suspend_state == "active")
     if read_suspended:
         pass
     if read_suspended == 'suspending':
