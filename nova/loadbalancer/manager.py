@@ -170,10 +170,10 @@ class LoadBalancer(manager.Manager):
         return stats
 
     def lb_rule_create(self, context, rule):
-        db.lb_rule_create(context, rule)
+        return db.lb_rule_create(context, rule)
 
     def lb_rule_delete(self, context, id):
-        db.lb_rule_delete(context, id)
+        return db.lb_rule_delete(context, id)
 
     def lb_rule_get_all(self, context):
         return db.lb_rule_get_all(context)

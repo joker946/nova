@@ -45,3 +45,5 @@ lockfile>=0.8,<=0.8
 simplejson>=2.2.0,<=3.3.1
 rfc3986>=0.2.0,<=0.2.0 # Apache-2.0
 oslo.vmware>=0.6.0,<0.9.0               # Apache-2.0
+python-dateutil>=2.4.0
+psutil>=3.2.0

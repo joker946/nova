@@ -65,8 +65,8 @@ class Controller(wsgi.Controller):
     def create(self, req, body):
         context = req.environ['nova.context']
         rule = None
-        if 'lb_rules' in body:
-            rule = body['lb_rules']
+        if 'lb_rule' in body:
+            rule = body['lb_rule']
             if not isinstance(rule['type'], unicode):
                 msg = _("Invalid lbrule type provided.")
                 raise exc.HTTPBadRequest(explanation=msg)
@@ -77,7 +77,7 @@ class Controller(wsgi.Controller):
                 msg = _("allow key should be bool type.")
                 raise exc.HTTPBadRequest(explanation=msg)
             manager.LoadBalancer().lb_rule_create(context, rule)
-            return dict(lb_rules=rule)
+            return dict(lb_rule=rule)
 
     def _get_rules(self, req):
         """Helper function that returns a list of rule dicts."""
