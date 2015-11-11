@@ -33,13 +33,6 @@ image_api = image.API()
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 
-nova_client = client.Client(
-    username='nova',
-    password='nova',
-    tenant_name='service',
-    auth_url='http://controller:5000/v2.0'
-)
-
 
 def _get_image(image_uuid):
     ctx = get_context()
@@ -47,7 +40,12 @@ def _get_image(image_uuid):
 
 
 def get_context():
-    creds = nova_client
+    creds = client.Client(
+        username='nova',
+        password='nova',
+        tenant_name='service',
+        auth_url='http://controller:5000/v2.0'
+        )
     s_catalog = creds.service_catalog.catalog['serviceCatalog']
     ctx = nova_context.RequestContext(user_id=creds.user_id,
                                       is_admin=True,

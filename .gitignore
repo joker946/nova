@@ -43,3 +43,4 @@ tools/lintstack.head.py
 tools/pylint_exceptions
 
 diff.txt
+init/*
