@@ -43,11 +43,56 @@ COMPUTE_STATS = [
 
 INSTANCES = [
     dict(root_gb=512, ephemeral_gb=0, memory_mb=512, vcpus=1, uuid='xxx',
-         host='host1', node='node1', vm_state=vm_states.ACTIVE,
+         host='node1', node='node1', vm_state=vm_states.ACTIVE,
          image_ref=1, reservation_id='r-fakeres', user_id='fake',
          project_id='fake', instance_type_id=2, ami_launch_index=0),
     dict(root_gb=512, ephemeral_gb=0, memory_mb=512, vcpus=1, uuid='yyy',
-         host='host2', node='node2', vm_state=vm_states.ACTIVE,
+         host='node2', node='node2', vm_state=vm_states.ACTIVE,
+         image_ref=1, reservation_id='r-fakeres', user_id='fake',
+         project_id='fake', instance_type_id=2, ami_launch_index=0),
+    dict(root_gb=512, ephemeral_gb=0, memory_mb=512, vcpus=1, uuid='zzz',
+         host='node1', node='node1', vm_state=vm_states.STOPPED,
          image_ref=1, reservation_id='r-fakeres', user_id='fake',
          project_id='fake', instance_type_id=2, ami_launch_index=0)
 ]
+
+
+class LbFakes(object):
+
+    def _init_services(self):
+        self.service1 = db.service_create(context.get_admin_context(),
+                                          COMPUTE_SERVICES[0])
+        self.service2 = db.service_create(context.get_admin_context(),
+                                          COMPUTE_SERVICES[1])
+        COMPUTE_NODES[0].update(dict(service_id=self.service1['id']))
+        COMPUTE_NODES[1].update(dict(service_id=self.service2['id']))
+
+    def _add_compute_nodes(self):
+        for pos, node in enumerate(COMPUTE_NODES):
+            node = db.compute_node_create(self.context, node)
+            COMPUTE_STATS[pos]['compute_id'] = node['id']
+        for instance in INSTANCES:
+            db.instance_create(self.context, instance)
+        db.compute_node_stats_upsert(self.context, dict(
+            node=COMPUTE_STATS[0],
+            instances=[
+                dict(instance_uuid='xxx', cpu_time=123123123,
+                     mem=512, prev_cpu_time=12000000, block_dev_iops=1000,
+                     prev_block_dev_iops=1000)]))
+        db.compute_node_stats_upsert(self.context, dict(
+            node=COMPUTE_STATS[1],
+            instances=[
+                dict(instance_uuid='yyy', cpu_time=123123123,
+                     mem=512, prev_cpu_time=12000000, block_dev_iops=1000,
+                     prev_block_dev_iops=1000)]))
+
+    def _add_compute_nodes_without_instances(self):
+        for pos, node in enumerate(COMPUTE_NODES):
+            node = db.compute_node_create(self.context, node)
+            COMPUTE_STATS[pos]['compute_id'] = node['id']
+        db.compute_node_stats_upsert(self.context, dict(
+            node=COMPUTE_STATS[0],
+            instances=[]))
+        db.compute_node_stats_upsert(self.context, dict(
+            node=COMPUTE_STATS[1],
+            instances=[]))

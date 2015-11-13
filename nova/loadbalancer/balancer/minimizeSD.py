@@ -125,6 +125,9 @@ class MinimizeSD(BaseBalancer):
                 context,
                 node['hypervisor_hostname'])
             instances.extend(node_instances)
+        if not instances:
+            LOG.warn("Instances could not be found. Skipping balancing.")
+            return
         host_loads = lb_utils.fill_compute_stats(instances, compute_nodes)
         LOG.debug(_(host_loads))
         vm_host_map = []
