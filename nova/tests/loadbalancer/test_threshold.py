@@ -28,20 +28,20 @@ class StandartDeviationTestCase(test.TestCase, fakes.LbFakes):
 
     def test_indicate_with_cpu_overload(self):
         self._init_services()
-        fakes.COMPUTE_STATS[0].update(cpu_used_percent=90)
+        self.fakes.stats[0].update(cpu_used_percent=90)
         self._add_compute_nodes()
         result = self.sd.indicate(self.context)
-        self.assertEqual(fakes.COMPUTE_NODES[0]['hypervisor_hostname'],
+        self.assertEqual(self.fakes.nodes[0]['hypervisor_hostname'],
                          result[0]['hypervisor_hostname'])
 
     def test_indicate_with_memory_overload(self):
         self._init_services()
-        fakes.COMPUTE_STATS[0].update(memory_used=1000)
-        fakes.COMPUTE_STATS[1].update(memory_used=100)
+        self.fakes.stats[0].update(memory_used=1000)
+        self.fakes.stats[1].update(memory_used=100)
         self._add_compute_nodes()
         result = self.sd.indicate(self.context)
         print result
-        self.assertEqual(fakes.COMPUTE_NODES[0]['hypervisor_hostname'],
+        self.assertEqual(self.fakes.nodes[0]['hypervisor_hostname'],
                          result[0]['hypervisor_hostname'])
 
 
@@ -58,16 +58,16 @@ class StepThresholdTestCase(test.TestCase, fakes.LbFakes):
 
     def test_indicate_with_cpu_overload(self):
         self._init_services()
-        fakes.COMPUTE_STATS[0].update(cpu_used_percent=90)
+        self.fakes.stats[0].update(cpu_used_percent=90)
         self._add_compute_nodes()
         result = self.step.indicate(self.context)
         self.assertEqual(result[0]['hypervisor_hostname'],
-                         fakes.COMPUTE_NODES[0]['hypervisor_hostname'])
+                         self.fakes.nodes[0]['hypervisor_hostname'])
 
     def test_indicate_with_memory_overload(self):
         self._init_services()
-        fakes.COMPUTE_STATS[0].update(memory_used=768)
+        self.fakes.stats[0].update(memory_used=768)
         self._add_compute_nodes()
         result = self.step.indicate(self.context)
         self.assertEqual(result[0]['hypervisor_hostname'],
-                         fakes.COMPUTE_NODES[0]['hypervisor_hostname'])
+                         self.fakes.nodes[0]['hypervisor_hostname'])

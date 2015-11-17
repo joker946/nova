@@ -199,11 +199,7 @@ def calculate_host_loads(compute_nodes, compute_stats):
     host_loads = compute_stats
     for node in compute_nodes:
         host_loads[node['hypervisor_hostname']]['mem'] \
-            = float(host_loads[node['hypervisor_hostname']]['mem'])
-        host_loads[node['hypervisor_hostname']]['mem'] \
             /= float(node['memory_total'])
-        host_loads[node['hypervisor_hostname']]['cpu'] \
-            = float(host_loads[node['hypervisor_hostname']]['cpu'])
         host_loads[node['hypervisor_hostname']]['cpu'] \
             /= 100.00
     return host_loads

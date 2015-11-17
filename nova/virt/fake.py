@@ -146,6 +146,7 @@ class FakeDriver(driver.ComputeDriver):
           'disk_available_least': 0,
           'supported_instances': jsonutils.dumps([(None, 'fake', None)]),
           'numa_topology': None,
+          'real_memory_mb_used': self.memory_mb
           }
         self._mounts = {}
         self._interfaces = {}

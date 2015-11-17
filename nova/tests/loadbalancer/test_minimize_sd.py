@@ -14,7 +14,7 @@ class MinimizeSDTestCase(test.TestCase, fakes.LbFakes):
 
     def test_min_sd(self):
         self._init_services()
-        fakes.COMPUTE_STATS[0].update(cpu_used_percent=90)
+        self.fakes.stats[0].update(cpu_used_percent=90)
         self._add_compute_nodes()
         self.mox.StubOutWithMock(self.balancer, 'filter_hosts')
         self.mox.StubOutWithMock(self.balancer, 'migrate')
@@ -47,7 +47,7 @@ class MinimizeSDTestCase(test.TestCase, fakes.LbFakes):
 
     def test_migrate_all_vms_from_host(self):
         self._init_services()
-        del fakes.INSTANCES[2]
+        del self.fakes.instances[2]
         self._add_compute_nodes()
         self.mox.StubOutWithMock(self.balancer, 'filter_hosts')
         self.mox.StubOutWithMock(self.balancer, 'migrate')
@@ -70,7 +70,7 @@ class MinimizeSDTestCase(test.TestCase, fakes.LbFakes):
 
     def test_migrate_all_vms_from_host_nothing_is_filtered(self):
         self._init_services()
-        del fakes.INSTANCES[2]
+        del self.fakes.instances[2]
         self._add_compute_nodes()
         self.mox.StubOutWithMock(self.balancer, 'filter_hosts')
         self.balancer.filter_hosts(
@@ -108,6 +108,19 @@ class MinimizeSDTestCase(test.TestCase, fakes.LbFakes):
               'suspend_state': 'active', 'memory_total': 2048,
               'mac_to_wake': ''}], host='node2').AndReturn((True, True))
         self.balancer.migrate(self.context, 'xxx', hostname='node2')
+        self.mox.ReplayAll()
+        result = self.balancer.migrate_all_vms_from_host(self.context, 'node1')
+        self.assertTrue(result)
+
+    def test_migrate_all_vms_from_host_shutdown_only(self):
+        self._init_services()
+        self.fakes.instances[0].update(vm_state='stopped')
+        self.fakes.instances[1].update(vm_state='stopped')
+        self._add_compute_nodes()
+        self.mox.StubOutWithMock(self.balancer, 'migrate')
+        for uuid in ['zzz', 'xxx']:
+            self.balancer.migrate(self.context, uuid,
+                                  cold_migration=True).AndReturn(True)
         self.mox.ReplayAll()
         result = self.balancer.migrate_all_vms_from_host(self.context, 'node1')
         self.assertTrue(result)
