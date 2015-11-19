@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from nova.compute import rpcapi as compute_api
 from nova import db
 from nova import exception
 from nova import objects
@@ -51,6 +52,7 @@ CONF.register_opts(lb_opts, 'loadbalancer_mean_underload')
 class MeanUnderload(Base):
     def __init__(self):
         self.minimizeSD = MinimizeSD()
+        self.compute_rpc = compute_api.ComputeAPI()
 
     def indicate(self, context, **kwargs):
         extra = kwargs.get('extra_info')
