@@ -123,6 +123,8 @@ class MeanUnderloadTestCase(test.TestCase, fakes.LbFakes):
         self._init_services()
         self.fakes.nodes[0].update(dict(suspend_state='suspending',
                                         mac_to_wake='MAC'))
+        self.fakes.nodes[1].update(dict(suspend_state='suspending',
+                                        mac_to_wake='MAC'))
         self._add_compute_nodes()
         with contextlib.nested(
             mock.patch.object(objects.migration.MigrationList,
@@ -132,6 +134,8 @@ class MeanUnderloadTestCase(test.TestCase, fakes.LbFakes):
             mock.patch.object(self.underload.minimizeSD, 'confirm_migration')
                 ) as (mock_migration_list, mock_confirm):
             self.underload.check_is_all_vms_migrated(self.context)
+            mock_migration_list.assert_called_once_with(self.context, 'node1',
+                                                        'node1')
             mock_confirm.assert_called_once_with(self.context, 'xxx')
 
     def test_check_is_all_vms_migrated_filled_host(self):

@@ -59,6 +59,8 @@ fake_compute_node = {
     'stats': fake_stats_db_format,
     'host_ip': fake_host_ip,
     'numa_topology': fake_numa_topology_db_format,
+    'suspend_state': 'active',
+    'mac_to_wake': 'MAC'
     }
 
 
